@@ -9,12 +9,14 @@ _SEARCH_OPTS = {
     "quiet": True,
     "default_search": "ytsearch1",
     "extract_flat": False,
+    "remote_components": ["ejs:github"],
 }
 
 _RESOLVE_OPTS = {
     "format": "bestaudio/best",
     "noplaylist": True,
     "quiet": True,
+    "remote_components": ["ejs:github"],
 }
 
 FFMPEG_BEFORE_OPTIONS = (
