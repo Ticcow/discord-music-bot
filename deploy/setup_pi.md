@@ -101,3 +101,24 @@ htop
 ```
 
 If memory is too tight, drop to a smaller model (e.g. `qwen2.5:0.5b`) by changing `OLLAMA_MODEL` in `.env` and restarting the service.
+
+## 9. Keep yt-dlp updated automatically (recommended)
+
+YouTube regularly changes things in ways that break older yt-dlp versions - unlike the rest of
+this project's pinned dependencies, yt-dlp needs to move faster than a one-time install. This
+installs a weekly timer that upgrades yt-dlp and restarts the bot only if the version actually
+changed:
+
+```bash
+sed -e "s/User=pi/User=$(whoami)/" -e "s#/home/pi#$HOME#g" deploy/yt-dlp-update.service | sudo tee /etc/systemd/system/yt-dlp-update.service
+sudo cp deploy/yt-dlp-update.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now yt-dlp-update.timer
+```
+
+Confirm it worked without waiting a week:
+
+```bash
+sudo systemctl start yt-dlp-update.service
+journalctl -u yt-dlp-update.service -n 20
+```

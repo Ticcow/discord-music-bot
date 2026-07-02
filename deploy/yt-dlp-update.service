@@ -1,0 +1,8 @@
+[Unit]
+Description=Update yt-dlp and restart the Discord bot if it changed
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/discord-music-bot
+ExecStart=/home/pi/discord-music-bot/deploy/update_yt_dlp.sh
