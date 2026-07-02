@@ -11,21 +11,32 @@ logger = logging.getLogger(__name__)
 
 
 async def ensure_voice_client(interaction: discord.Interaction) -> discord.VoiceClient | None:
-    """Return the guild's active voice client, connecting to the invoker's channel if needed."""
+    """Return the guild's active voice client, connecting to the invoker's channel if needed.
+    Callers must defer the interaction response first."""
     voice_client = interaction.guild.voice_client
     if voice_client is not None:
         return voice_client
 
     member = interaction.user
     if not isinstance(member, discord.Member) or member.voice is None:
-        await interaction.response.send_message(
-            "You need to be in a voice channel first.", ephemeral=True
-        )
+        await interaction.followup.send("You need to be in a voice channel first.", ephemeral=True)
         return None
 
     voice_client = await member.voice.channel.connect()
     await status_panel.ensure_panel(interaction.channel, interaction.guild.id)
     return voice_client
+
+
+def is_authorized(voice_client: discord.VoiceClient | None, member: discord.abc.User) -> bool:
+    """True if there's no active session yet (so a new one can be started wherever the
+    requester is), or the requester is in the bot's current voice channel."""
+    if voice_client is None:
+        return True
+    return (
+        isinstance(member, discord.Member)
+        and member.voice is not None
+        and member.voice.channel.id == voice_client.channel.id
+    )
 
 
 async def play_next(voice_client: discord.VoiceClient) -> None:
