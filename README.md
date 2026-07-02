@@ -41,11 +41,14 @@ Tracks queue into one of two lanes:
 A `/play` request always "leapfrogs" ahead of whatever's left in an ambient batch, so you're never
 stuck waiting through someone else's autoplay session to hear the specific song you asked for.
 
-### Idle timeout
+### Auto-disconnect
 
-If nothing is actively playing (empty queue, or paused) for 10 minutes, the bot automatically
-leaves the voice channel, clears the queue, and posts a note explaining why. Configurable via
-`IDLE_TIMEOUT_SECONDS` in `.env`.
+The bot leaves the voice channel automatically, clearing the queue and posting a note explaining
+why, in two situations:
+
+- **Idle timeout** - nothing has actively played (empty queue, or paused) for 10 minutes.
+  Configurable via `IDLE_TIMEOUT_SECONDS` in `.env`.
+- **Alone in the channel** - every human member leaves, whether or not anything was playing.
 
 ## The Now Playing panel
 

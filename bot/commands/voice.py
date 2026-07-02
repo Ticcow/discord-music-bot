@@ -3,7 +3,6 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.music import player, status_panel
-from bot.music.queue import queues
 
 
 class VoiceCog(commands.Cog):
@@ -42,11 +41,33 @@ class VoiceCog(commands.Cog):
             )
             return
 
-        player.cancel_idle_timer(interaction.guild.id)
-        queues.get(interaction.guild.id).clear()
-        await voice_client.disconnect()
-        await status_panel.clear_panel(interaction.guild.id)
+        await player.disconnect_and_cleanup(voice_client)
         await interaction.response.send_message("Disconnected.")
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        if member.bot:
+            return
+
+        voice_client = member.guild.voice_client
+        if voice_client is None:
+            return
+
+        # Only relevant if this change affects the bot's own channel.
+        if before.channel != voice_client.channel and after.channel != voice_client.channel:
+            return
+
+        if any(not m.bot for m in voice_client.channel.members):
+            return
+
+        await player.disconnect_and_cleanup(
+            voice_client, reason="Left the voice channel because everyone left."
+        )
 
 
 async def setup(bot: commands.Bot) -> None:

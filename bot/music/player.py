@@ -19,26 +19,36 @@ def cancel_idle_timer(guild_id: int) -> None:
         task.cancel()
 
 
+async def disconnect_and_cleanup(voice_client: discord.VoiceClient, *, reason: str | None = None) -> None:
+    """Tear down a voice session: cancel any idle timer, clear the queue,
+    disconnect, and remove the panel. If reason is given, posts a note in
+    the panel's channel explaining why the bot left."""
+    guild_id = voice_client.guild.id
+    cancel_idle_timer(guild_id)
+    channel = status_panel.get_channel(guild_id) if reason else None
+    queues.get(guild_id).clear()
+    await voice_client.disconnect()
+    await status_panel.clear_panel(guild_id)
+    if reason and channel is not None:
+        try:
+            await channel.send(reason)
+        except discord.HTTPException:
+            logger.warning("Failed to post disconnect notice for guild %s", guild_id)
+
+
 async def _disconnect_after_idle(voice_client: discord.VoiceClient) -> None:
     try:
         await asyncio.sleep(settings.idle_timeout_seconds)
     except asyncio.CancelledError:
         return
 
-    guild_id = voice_client.guild.id
-    _idle_timers.pop(guild_id, None)
+    _idle_timers.pop(voice_client.guild.id, None)
     if not voice_client.is_connected():
         return
 
-    channel = status_panel.get_channel(guild_id)
-    queues.get(guild_id).clear()
-    await voice_client.disconnect()
-    await status_panel.clear_panel(guild_id)
-    if channel is not None:
-        try:
-            await channel.send("Left the voice channel after being idle for too long.")
-        except discord.HTTPException:
-            logger.warning("Failed to post idle-timeout notice for guild %s", guild_id)
+    await disconnect_and_cleanup(
+        voice_client, reason="Left the voice channel after being idle for too long."
+    )
 
 
 def start_idle_timer(voice_client: discord.VoiceClient) -> None:
