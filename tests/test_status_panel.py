@@ -96,6 +96,7 @@ def _fake_history_raising(exc: Exception):
 
 def setup_function() -> None:
     status_panel._panels.clear()
+    status_panel._current_lyric.clear()
 
 
 async def test_ensure_panel_only_posts_once():
@@ -285,3 +286,77 @@ async def test_clear_panel_deletes_message_and_allows_recreation():
 
     message.delete.assert_awaited_once()
     assert guild_id not in status_panel._panels
+
+
+def test_build_embed_omits_lyrics_field_when_no_lyric_line_is_tracked():
+    embed = status_panel._build_embed(120, is_paused=False)
+    assert not any(field.name == "Lyrics" for field in embed.fields)
+
+
+def test_build_embed_includes_the_current_lyric_line():
+    guild_id = 121
+    status_panel._current_lyric[guild_id] = "Some lyric line"
+    embed = status_panel._build_embed(guild_id, is_paused=False)
+    lyric_fields = [f for f in embed.fields if f.name == "Lyrics"]
+    assert len(lyric_fields) == 1
+    assert lyric_fields[0].value == "Some lyric line"
+
+
+async def test_update_lyric_line_edits_the_panel_message_in_place():
+    # Reposting on every lyrics tick (every couple of seconds) would spam the
+    # channel with a new message each time - unlike refresh(), this must edit
+    # the existing message rather than delete-and-repost.
+    guild_id = 122
+    channel = _fake_channel()
+    message = _fake_message(channel)
+    message.edit = AsyncMock()
+    channel.send.return_value = message
+    await status_panel.ensure_panel(channel, guild_id)
+
+    voice_client = _fake_voice_client(guild_id)
+    await status_panel.update_lyric_line(voice_client, "Current lyric")
+
+    message.edit.assert_awaited_once()
+    message.delete.assert_not_awaited()
+    channel.send.assert_awaited_once()  # only the original post, no repost
+    assert status_panel._current_lyric[guild_id] == "Current lyric"
+
+
+async def test_update_lyric_line_is_a_noop_without_a_panel():
+    voice_client = _fake_voice_client(123)
+    await status_panel.update_lyric_line(voice_client, "Current lyric")  # should not raise
+    assert status_panel._current_lyric[123] == "Current lyric"
+
+
+async def test_update_lyric_line_swallows_edit_permission_errors():
+    guild_id = 124
+    channel = _fake_channel()
+    message = _fake_message(channel)
+    message.edit = AsyncMock(side_effect=_server_error())
+    channel.send.return_value = message
+    await status_panel.ensure_panel(channel, guild_id)
+
+    voice_client = _fake_voice_client(guild_id)
+    await status_panel.update_lyric_line(voice_client, "Current lyric")  # should not raise
+
+
+async def test_clear_lyric_line_removes_the_tracked_line():
+    guild_id = 125
+    status_panel._current_lyric[guild_id] = "Stale lyric from previous track"
+
+    await status_panel.clear_lyric_line(guild_id)
+
+    assert guild_id not in status_panel._current_lyric
+
+
+async def test_clear_panel_also_clears_the_lyric_line():
+    guild_id = 126
+    channel = _fake_channel()
+    message = _fake_message(channel)
+    channel.send.return_value = message
+    await status_panel.ensure_panel(channel, guild_id)
+    status_panel._current_lyric[guild_id] = "Some lyric"
+
+    await status_panel.clear_panel(guild_id)
+
+    assert guild_id not in status_panel._current_lyric

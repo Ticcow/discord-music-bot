@@ -1,17 +1,104 @@
 import asyncio
 import io
 import logging
+import time
+from dataclasses import dataclass
 
 import discord
 
 from bot.config import settings
-from bot.music import status_panel
+from bot.music import lyrics, status_panel
 from bot.music.queue import GuildQueue, queues
 from bot.music.youtube import FFMPEG_OPTIONS, Track, resolve_stream_url
 
 logger = logging.getLogger(__name__)
 
 _idle_timers: dict[int, asyncio.Task] = {}
+
+# How often the synced-lyrics ticker checks playback position and (if the
+# current line has advanced) edits the panel. A couple of seconds is close
+# enough to feel "synced" without hammering Discord's edit rate limit.
+_LYRIC_TICK_INTERVAL_SECONDS = 2
+
+_lyric_tickers: dict[int, asyncio.Task] = {}
+
+
+@dataclass
+class _PlaybackPosition:
+    started_at: float
+    paused_at: float | None = None
+    accumulated_pause: float = 0.0
+
+    def elapsed(self) -> float:
+        end = self.paused_at if self.paused_at is not None else time.monotonic()
+        return end - self.started_at - self.accumulated_pause
+
+
+# discord.py's VoiceClient exposes no "current playback position" - tracked
+# by hand here so the lyrics ticker knows which line is "now".
+_playback_positions: dict[int, _PlaybackPosition] = {}
+
+
+def _start_playback_position(guild_id: int) -> None:
+    _playback_positions[guild_id] = _PlaybackPosition(started_at=time.monotonic())
+
+
+def _pause_playback_position(guild_id: int) -> None:
+    position = _playback_positions.get(guild_id)
+    if position is not None and position.paused_at is None:
+        position.paused_at = time.monotonic()
+
+
+def _resume_playback_position(guild_id: int) -> None:
+    position = _playback_positions.get(guild_id)
+    if position is not None and position.paused_at is not None:
+        position.accumulated_pause += time.monotonic() - position.paused_at
+        position.paused_at = None
+
+
+def _clear_playback_position(guild_id: int) -> None:
+    _playback_positions.pop(guild_id, None)
+
+
+def _cancel_lyric_ticker(guild_id: int) -> None:
+    task = _lyric_tickers.pop(guild_id, None)
+    if task is not None:
+        task.cancel()
+
+
+def _start_lyric_ticker(voice_client: discord.VoiceClient, track: Track, lines: list[lyrics.LyricLine]) -> None:
+    guild_id = voice_client.guild.id
+    _cancel_lyric_ticker(guild_id)
+    _lyric_tickers[guild_id] = asyncio.create_task(_tick_lyrics(voice_client, track, lines))
+
+
+async def _tick_lyrics(voice_client: discord.VoiceClient, track: Track, lines: list[lyrics.LyricLine]) -> None:
+    guild_id = voice_client.guild.id
+    last_line: lyrics.LyricLine | None = None
+    while True:
+        await asyncio.sleep(_LYRIC_TICK_INTERVAL_SECONDS)
+        if not voice_client.is_connected() or queues.get(guild_id).now_playing is not track:
+            return
+        position = _playback_positions.get(guild_id)
+        if position is None:
+            return
+        line = lyrics.current_line(lines, position.elapsed())
+        if line is not None and line is not last_line:
+            last_line = line
+            await status_panel.update_lyric_line(voice_client, line.text)
+
+
+async def _load_lyrics_and_start_ticking(voice_client: discord.VoiceClient, track: Track) -> None:
+    """Runs as a background task alongside playback - fetching lyrics is a
+    network call and must never delay audio actually starting."""
+    lines = await lyrics.fetch_synced_lyrics(track)
+    if not lines:
+        return
+    guild_id = voice_client.guild.id
+    if queues.get(guild_id).now_playing is not track:
+        return  # track changed/ended while the lookup was in flight
+    _start_lyric_ticker(voice_client, track, lines)
+
 
 # Signatures that show up in ffmpeg's stderr when YouTube rejects a stream
 # request outright (bad/expired signature, region lock, removed video, etc).
@@ -35,6 +122,8 @@ def cancel_idle_timer(guild_id: int) -> None:
 
 async def _cleanup_session(guild_id: int, *, reason: str | None = None) -> None:
     cancel_idle_timer(guild_id)
+    _cancel_lyric_ticker(guild_id)
+    _clear_playback_position(guild_id)
     channel = status_panel.get_channel(guild_id) if reason else None
     queues.get(guild_id).clear()
     await status_panel.clear_panel(guild_id)
@@ -119,14 +208,20 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
     if not voice_client.is_connected():
         return
 
-    guild_queue: GuildQueue = queues.get(voice_client.guild.id)
+    guild_id = voice_client.guild.id
+    guild_queue: GuildQueue = queues.get(guild_id)
     track = guild_queue.pop_next()
     if track is None:
+        _cancel_lyric_ticker(guild_id)
+        _clear_playback_position(guild_id)
         start_idle_timer(voice_client)
         await status_panel.refresh(voice_client)
         return
 
-    cancel_idle_timer(voice_client.guild.id)
+    cancel_idle_timer(guild_id)
+    _cancel_lyric_ticker(guild_id)
+    _start_playback_position(guild_id)
+    await status_panel.clear_lyric_line(guild_id)
 
     stream_url, before_options = await resolve_stream_url(track)
     stderr_buffer = io.BytesIO()
@@ -150,6 +245,7 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
 
     voice_client.play(source, after=_after)
     await status_panel.refresh(voice_client)
+    asyncio.create_task(_load_lyrics_and_start_ticking(voice_client, track))
 
 
 async def _notify_playback_failed(voice_client: discord.VoiceClient, track: Track) -> None:
@@ -187,6 +283,7 @@ async def enqueue_ambient(voice_client: discord.VoiceClient, track: Track) -> No
 async def pause(voice_client: discord.VoiceClient) -> bool:
     if voice_client.is_playing():
         voice_client.pause()
+        _pause_playback_position(voice_client.guild.id)
         start_idle_timer(voice_client)
         await status_panel.refresh(voice_client)
         return True
@@ -196,6 +293,7 @@ async def pause(voice_client: discord.VoiceClient) -> bool:
 async def resume(voice_client: discord.VoiceClient) -> bool:
     if voice_client.is_paused():
         voice_client.resume()
+        _resume_playback_position(voice_client.guild.id)
         cancel_idle_timer(voice_client.guild.id)
         await status_panel.refresh(voice_client)
         return True

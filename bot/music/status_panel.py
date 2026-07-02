@@ -9,6 +9,11 @@ logger = logging.getLogger(__name__)
 
 _panels: dict[int, discord.Message] = {}
 
+# The synced-lyrics ticker's current line per guild, shown as an extra embed
+# field. Kept separate from the panel message so _build_embed can include it
+# on any repost/edit without the caller needing to pass it through.
+_current_lyric: dict[int, str] = {}
+
 # ensure_panel/refresh/clear_panel all read-then-write _panels[guild_id]. If a
 # track fails almost instantly, play_next() can run twice in quick succession
 # and race two refresh() calls: both post a new message, but only one gets
@@ -51,6 +56,10 @@ def _build_embed(guild_id: int, is_paused: bool) -> discord.Embed:
         )
     else:
         embed.add_field(name="Now Playing", value="Nothing is playing.", inline=False)
+
+    lyric_line = _current_lyric.get(guild_id)
+    if lyric_line:
+        embed.add_field(name="Lyrics", value=lyric_line, inline=False)
 
     upcoming = guild_queue.peek_all()
     if upcoming:
@@ -120,6 +129,7 @@ async def refresh(voice_client: discord.VoiceClient) -> None:
 
 async def clear_panel(guild_id: int) -> None:
     async with _lock_for(guild_id):
+        _current_lyric.pop(guild_id, None)
         message = _panels.pop(guild_id, None)
         if message is None:
             return
@@ -127,6 +137,30 @@ async def clear_panel(guild_id: int) -> None:
             await message.delete()
         except discord.NotFound:
             pass
+
+
+async def clear_lyric_line(guild_id: int) -> None:
+    """Drop the previous track's lyric line so a fresh panel/refresh doesn't
+    show a stale line while the new track's lyrics are still being looked up."""
+    async with _lock_for(guild_id):
+        _current_lyric.pop(guild_id, None)
+
+
+async def update_lyric_line(voice_client: discord.VoiceClient, text: str) -> None:
+    """Edit the panel message in place to show the current lyric line, rather
+    than reposting - reposting on every tick would spam the channel with a
+    new message every couple of seconds as the ticker advances."""
+    guild_id = voice_client.guild.id
+    async with _lock_for(guild_id):
+        _current_lyric[guild_id] = text
+        message = _panels.get(guild_id)
+        if message is None:
+            return
+        embed = _build_embed(guild_id, is_paused=voice_client.is_paused())
+        try:
+            await message.edit(embed=embed)
+        except discord.HTTPException:
+            logger.warning("Failed to update lyric line for guild %s", guild_id)
 
 
 def get_channel(guild_id: int) -> discord.abc.Messageable | None:
