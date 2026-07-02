@@ -27,10 +27,17 @@ HELP_FOOTER_TEXT = (
     "/play, /pause, /resume, /skip, /queue, /lyrics - or just /ask in plain English"
 )
 
+PANEL_EMBED_TITLE = "DJ OLLAMA"
+
+# How far back to look for leftover panels (e.g. posted before a bot restart,
+# which wipes the in-memory _panels tracking but leaves the message sitting
+# in the channel). Recent history only - not a full-channel scan.
+_STALE_PANEL_SCAN_LIMIT = 50
+
 
 def _build_embed(guild_id: int, is_paused: bool) -> discord.Embed:
     guild_queue = queues.get(guild_id)
-    embed = discord.Embed(title="DJ OLLAMA", color=discord.Color.blurple())
+    embed = discord.Embed(title=PANEL_EMBED_TITLE, color=discord.Color.blurple())
     embed.set_thumbnail(url=CATJAM_GIF_URL)
     embed.set_footer(text=HELP_FOOTER_TEXT)
 
@@ -53,12 +60,32 @@ def _build_embed(guild_id: int, is_paused: bool) -> discord.Embed:
     return embed
 
 
+async def _delete_stale_panels(channel: discord.abc.Messageable) -> None:
+    """Delete any leftover panel messages sitting in the channel that we're not
+    currently tracking - most commonly because the bot restarted and the
+    in-memory _panels dict was wiped, but the old message never got cleaned up."""
+    me = getattr(getattr(channel, "guild", None), "me", None)
+    try:
+        async for message in channel.history(limit=_STALE_PANEL_SCAN_LIMIT):
+            if me is not None and message.author != me:
+                continue
+            if not message.embeds or message.embeds[0].title != PANEL_EMBED_TITLE:
+                continue
+            try:
+                await message.delete()
+            except discord.HTTPException:
+                pass
+    except discord.HTTPException:
+        logger.warning("Failed to scan for stale status panels")
+
+
 async def ensure_panel(channel: discord.abc.Messageable, guild_id: int) -> None:
     """Post the live panel the first time a guild starts using voice. No-op if one already exists.
     Swallows permission errors so a channel the bot can't post in doesn't block playback."""
     async with _lock_for(guild_id):
         if guild_id in _panels:
             return
+        await _delete_stale_panels(channel)
         try:
             message = await channel.send(embed=_build_embed(guild_id, is_paused=False))
         except discord.HTTPException:
