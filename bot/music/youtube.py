@@ -64,6 +64,18 @@ def _looks_like_music(entry: dict) -> bool:
     return True
 
 
+def _select_candidates(candidates: list[dict], count: int) -> list[dict]:
+    music = [e for e in candidates if _looks_like_music(e)]
+    # If nothing passes the filter, prefer surfacing something over a false
+    # "no results" - better to occasionally play a borderline result than to
+    # fail outright on artists/queries the heuristic doesn't recognize.
+    chosen = list(music if music else candidates)
+    # Prefer official artist "Topic" channels (YouTube's auto-generated,
+    # music-only channels) when available, otherwise keep search order.
+    chosen.sort(key=lambda e: 0 if (e.get("uploader") or "").lower().endswith("topic") else 1)
+    return chosen[:count]
+
+
 def _search_sync(query: str, count: int) -> list[dict]:
     candidate_count = max(count * 4, 8)
     with yt_dlp.YoutubeDL(_BASE_OPTS) as ydl:
@@ -71,13 +83,7 @@ def _search_sync(query: str, count: int) -> list[dict]:
         candidates = [e for e in info.get("entries", []) if e]
         if not candidates:
             raise ValueError(f"No results found for '{query}'")
-
-        music = [e for e in candidates if _looks_like_music(e)]
-        chosen = music if music else candidates
-        # Prefer official artist "Topic" channels (YouTube's auto-generated,
-        # music-only channels) when available, otherwise keep search order.
-        chosen.sort(key=lambda e: 0 if (e.get("uploader") or "").lower().endswith("topic") else 1)
-        return chosen[:count]
+        return _select_candidates(candidates, count)
 
 
 def _resolve_sync(webpage_url: str) -> str:
