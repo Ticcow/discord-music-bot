@@ -33,7 +33,7 @@ class PlaybackCog(commands.Cog):
     @app_commands.command(name="pause", description="Pause playback")
     async def pause(self, interaction: discord.Interaction) -> None:
         voice_client = interaction.guild.voice_client
-        if voice_client and player.pause(voice_client):
+        if voice_client is not None and await player.pause(voice_client):
             await interaction.response.send_message("Paused.")
         else:
             await interaction.response.send_message("Nothing is playing.", ephemeral=True)
@@ -41,7 +41,7 @@ class PlaybackCog(commands.Cog):
     @app_commands.command(name="resume", description="Resume playback")
     async def resume(self, interaction: discord.Interaction) -> None:
         voice_client = interaction.guild.voice_client
-        if voice_client and player.resume(voice_client):
+        if voice_client is not None and await player.resume(voice_client):
             await interaction.response.send_message("Resumed.")
         else:
             await interaction.response.send_message("Nothing is paused.", ephemeral=True)

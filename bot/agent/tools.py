@@ -33,10 +33,10 @@ async def execute_tool(
         return f"Queued {len(tracks)} tracks: {titles}."
 
     if name == "pause":
-        return "Paused." if player.pause(voice_client) else "Nothing is playing."
+        return "Paused." if await player.pause(voice_client) else "Nothing is playing."
 
     if name == "resume":
-        return "Resumed." if player.resume(voice_client) else "Nothing is paused."
+        return "Resumed." if await player.resume(voice_client) else "Nothing is paused."
 
     if name == "skip":
         return "Skipped." if player.skip(voice_client) else "Nothing is playing."

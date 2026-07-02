@@ -3,6 +3,7 @@ import logging
 
 import discord
 
+from bot.music import status_panel
 from bot.music.queue import GuildQueue, queues
 from bot.music.youtube import FFMPEG_BEFORE_OPTIONS, FFMPEG_OPTIONS, Track, resolve_stream_url
 
@@ -22,7 +23,9 @@ async def ensure_voice_client(interaction: discord.Interaction) -> discord.Voice
         )
         return None
 
-    return await member.voice.channel.connect()
+    voice_client = await member.voice.channel.connect()
+    await status_panel.ensure_panel(interaction.channel, interaction.guild.id)
+    return voice_client
 
 
 async def play_next(voice_client: discord.VoiceClient) -> None:
@@ -32,6 +35,7 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
     guild_queue: GuildQueue = queues.get(voice_client.guild.id)
     track = guild_queue.pop_next()
     if track is None:
+        await status_panel.refresh(voice_client)
         return
 
     stream_url = await resolve_stream_url(track)
@@ -49,6 +53,7 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
         asyncio.run_coroutine_threadsafe(play_next(voice_client), loop)
 
     voice_client.play(source, after=_after)
+    await status_panel.refresh(voice_client)
 
 
 async def _enqueue(voice_client: discord.VoiceClient, track: Track, *, priority: bool) -> None:
@@ -59,6 +64,8 @@ async def _enqueue(voice_client: discord.VoiceClient, track: Track, *, priority:
         guild_queue.add_ambient(track)
     if not voice_client.is_playing() and not voice_client.is_paused():
         await play_next(voice_client)
+    else:
+        await status_panel.refresh(voice_client)
 
 
 async def enqueue_priority(voice_client: discord.VoiceClient, track: Track) -> None:
@@ -71,16 +78,18 @@ async def enqueue_ambient(voice_client: discord.VoiceClient, track: Track) -> No
     await _enqueue(voice_client, track, priority=False)
 
 
-def pause(voice_client: discord.VoiceClient) -> bool:
+async def pause(voice_client: discord.VoiceClient) -> bool:
     if voice_client.is_playing():
         voice_client.pause()
+        await status_panel.refresh(voice_client)
         return True
     return False
 
 
-def resume(voice_client: discord.VoiceClient) -> bool:
+async def resume(voice_client: discord.VoiceClient) -> bool:
     if voice_client.is_paused():
         voice_client.resume()
+        await status_panel.refresh(voice_client)
         return True
     return False
 
@@ -90,9 +99,3 @@ def skip(voice_client: discord.VoiceClient) -> bool:
         voice_client.stop()
         return True
     return False
-
-
-def stop(voice_client: discord.VoiceClient) -> None:
-    queues.get(voice_client.guild.id).clear()
-    if voice_client.is_playing() or voice_client.is_paused():
-        voice_client.stop()
