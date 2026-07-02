@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     discord_bot_token: str
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:1.5b"
+    idle_timeout_seconds: int = 600
 
 
 settings = Settings()

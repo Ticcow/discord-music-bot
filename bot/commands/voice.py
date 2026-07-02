@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.music import status_panel
+from bot.music import player, status_panel
 from bot.music.queue import queues
 
 
@@ -23,8 +23,9 @@ class VoiceCog(commands.Cog):
         voice_client = interaction.guild.voice_client
 
         if voice_client is None:
-            await channel.connect()
+            voice_client = await channel.connect()
             await status_panel.ensure_panel(interaction.channel, interaction.guild.id)
+            player.start_idle_timer(voice_client)
             await interaction.response.send_message(f"Joined {channel.mention}.")
         elif voice_client.channel.id != channel.id:
             await voice_client.move_to(channel)
@@ -41,6 +42,7 @@ class VoiceCog(commands.Cog):
             )
             return
 
+        player.cancel_idle_timer(interaction.guild.id)
         queues.get(interaction.guild.id).clear()
         await voice_client.disconnect()
         await status_panel.clear_panel(interaction.guild.id)

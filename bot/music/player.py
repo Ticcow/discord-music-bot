@@ -3,11 +3,50 @@ import logging
 
 import discord
 
+from bot.config import settings
 from bot.music import status_panel
 from bot.music.queue import GuildQueue, queues
 from bot.music.youtube import FFMPEG_BEFORE_OPTIONS, FFMPEG_OPTIONS, Track, resolve_stream_url
 
 logger = logging.getLogger(__name__)
+
+_idle_timers: dict[int, asyncio.Task] = {}
+
+
+def cancel_idle_timer(guild_id: int) -> None:
+    task = _idle_timers.pop(guild_id, None)
+    if task is not None:
+        task.cancel()
+
+
+async def _disconnect_after_idle(voice_client: discord.VoiceClient) -> None:
+    try:
+        await asyncio.sleep(settings.idle_timeout_seconds)
+    except asyncio.CancelledError:
+        return
+
+    guild_id = voice_client.guild.id
+    _idle_timers.pop(guild_id, None)
+    if not voice_client.is_connected():
+        return
+
+    channel = status_panel.get_channel(guild_id)
+    queues.get(guild_id).clear()
+    await voice_client.disconnect()
+    await status_panel.clear_panel(guild_id)
+    if channel is not None:
+        try:
+            await channel.send("Left the voice channel after being idle for too long.")
+        except discord.HTTPException:
+            logger.warning("Failed to post idle-timeout notice for guild %s", guild_id)
+
+
+def start_idle_timer(voice_client: discord.VoiceClient) -> None:
+    """(Re)start the countdown to auto-disconnect. Called whenever nothing is
+    actively playing - an empty queue or a paused track."""
+    guild_id = voice_client.guild.id
+    cancel_idle_timer(guild_id)
+    _idle_timers[guild_id] = asyncio.create_task(_disconnect_after_idle(voice_client))
 
 
 async def ensure_voice_client(interaction: discord.Interaction) -> discord.VoiceClient | None:
@@ -24,6 +63,7 @@ async def ensure_voice_client(interaction: discord.Interaction) -> discord.Voice
 
     voice_client = await member.voice.channel.connect()
     await status_panel.ensure_panel(interaction.channel, interaction.guild.id)
+    start_idle_timer(voice_client)
     return voice_client
 
 
@@ -46,8 +86,11 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
     guild_queue: GuildQueue = queues.get(voice_client.guild.id)
     track = guild_queue.pop_next()
     if track is None:
+        start_idle_timer(voice_client)
         await status_panel.refresh(voice_client)
         return
+
+    cancel_idle_timer(voice_client.guild.id)
 
     stream_url = await resolve_stream_url(track)
     source = discord.FFmpegPCMAudio(
@@ -92,6 +135,7 @@ async def enqueue_ambient(voice_client: discord.VoiceClient, track: Track) -> No
 async def pause(voice_client: discord.VoiceClient) -> bool:
     if voice_client.is_playing():
         voice_client.pause()
+        start_idle_timer(voice_client)
         await status_panel.refresh(voice_client)
         return True
     return False
@@ -100,6 +144,7 @@ async def pause(voice_client: discord.VoiceClient) -> bool:
 async def resume(voice_client: discord.VoiceClient) -> bool:
     if voice_client.is_paused():
         voice_client.resume()
+        cancel_idle_timer(voice_client.guild.id)
         await status_panel.refresh(voice_client)
         return True
     return False

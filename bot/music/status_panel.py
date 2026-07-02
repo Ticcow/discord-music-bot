@@ -71,3 +71,10 @@ async def clear_panel(guild_id: int) -> None:
         await message.delete()
     except discord.NotFound:
         pass
+
+
+def get_channel(guild_id: int) -> discord.abc.Messageable | None:
+    """The panel's text channel, if one exists - useful for posting a note there
+    (e.g. an idle-timeout notice) before the panel itself is cleared."""
+    message = _panels.get(guild_id)
+    return message.channel if message else None
