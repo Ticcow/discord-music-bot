@@ -105,9 +105,18 @@ If memory is too tight, drop to a smaller model (e.g. `qwen2.5:0.5b`) by changin
 ## 9. Keep yt-dlp updated automatically (recommended)
 
 YouTube regularly changes things in ways that break older yt-dlp versions - unlike the rest of
-this project's pinned dependencies, yt-dlp needs to move faster than a one-time install. This
-installs a weekly timer that upgrades yt-dlp and restarts the bot only if the version actually
-changed:
+this project's pinned dependencies, yt-dlp needs to move faster than a one-time install.
+
+The bot itself also reacts to this in real time: if 3 tracks in a row fail to play, it posts a
+note to the channel, tries `pip install --upgrade yt-dlp` immediately, and restarts itself to pick
+up the new version if one was found (relying on `discord-bot.service`'s `Restart=on-failure`, same
+as the timer below) - so you don't have to wait for a scheduled check if something breaks
+mid-session. That reactive check has a one-hour cooldown so a non-yt-dlp problem (e.g. a real
+network outage) doesn't cause repeated restarts. No separate setup is needed for this - it's built
+into the bot process.
+
+On top of that, this installs a weekly timer that proactively upgrades yt-dlp and restarts the bot
+only if the version actually changed, so most breakage is avoided before it's ever noticed:
 
 ```bash
 sed -e "s/User=pi/User=$(whoami)/" -e "s#/home/pi#$HOME#g" deploy/yt-dlp-update.service | sudo tee /etc/systemd/system/yt-dlp-update.service

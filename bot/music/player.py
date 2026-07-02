@@ -1,11 +1,13 @@
 import asyncio
 import io
 import logging
+import os
+import time
 
 import discord
 
 from bot.config import settings
-from bot.music import status_panel
+from bot.music import status_panel, yt_dlp_updater
 from bot.music.queue import GuildQueue, queues
 from bot.music.youtube import FFMPEG_OPTIONS, Track, resolve_stream_url
 
@@ -25,6 +27,73 @@ def _playback_likely_failed(error: Exception | None, stderr_text: str) -> bool:
     if error is not None:
         return True
     return any(marker in stderr_text for marker in _FFMPEG_FAILURE_MARKERS)
+
+
+# A single track failing is normal (region lock, deleted video, a flaky CDN
+# blip) - but several failures in a row, across different videos, is the
+# actual signature of "YouTube changed something and yt-dlp needs an update"
+# rather than anything wrong with one specific track. This counter is
+# bot-wide (not per-guild): the same yt-dlp install serves every guild, so a
+# streak of failures anywhere is equally good evidence of the same problem.
+_CONSECUTIVE_FAILURE_THRESHOLD = 3
+_consecutive_playback_failures = 0
+
+# Once triggered, don't check again for an hour - if an update doesn't fix
+# it, the problem is something else, and repeatedly restarting the bot to
+# retry a pip install that keeps not helping would just add noise/downtime.
+_UPDATE_ATTEMPT_COOLDOWN_SECONDS = 60 * 60
+_last_update_attempt_at: float | None = None
+
+
+async def _track_playback_outcome(voice_client: discord.VoiceClient, *, failed: bool) -> None:
+    global _consecutive_playback_failures
+    if not failed:
+        _consecutive_playback_failures = 0
+        return
+
+    _consecutive_playback_failures += 1
+    if _consecutive_playback_failures >= _CONSECUTIVE_FAILURE_THRESHOLD:
+        _consecutive_playback_failures = 0
+        await _handle_suspected_yt_dlp_breakage(voice_client)
+
+
+async def _handle_suspected_yt_dlp_breakage(voice_client: discord.VoiceClient) -> None:
+    global _last_update_attempt_at
+    now = time.monotonic()
+    if _last_update_attempt_at is not None and now - _last_update_attempt_at < _UPDATE_ATTEMPT_COOLDOWN_SECONDS:
+        return
+    _last_update_attempt_at = now
+
+    channel = status_panel.get_channel(voice_client.guild.id)
+    await _send_breakage_notice(
+        channel,
+        f"{_CONSECUTIVE_FAILURE_THRESHOLD} tracks in a row failed to play - that usually means "
+        "YouTube changed something yt-dlp needs to catch up to. Checking for an update...",
+    )
+
+    before, after = await yt_dlp_updater.update_yt_dlp()
+    if before == after:
+        await _send_breakage_notice(
+            channel, f"yt-dlp is already up to date ({after or 'unknown'}) - probably not a yt-dlp issue."
+        )
+        return
+
+    await _send_breakage_notice(channel, f"Updated yt-dlp: {before} -> {after}. Restarting to apply it...")
+    logger.info("yt-dlp updated %s -> %s after a suspected-breakage streak, restarting", before, after)
+    # Hard exit rather than a graceful shutdown: importing already-loaded
+    # modules doesn't pick up an on-disk package upgrade, so the process must
+    # actually restart. discord-bot.service has Restart=on-failure and brings
+    # it straight back up with the new version.
+    os._exit(1)
+
+
+async def _send_breakage_notice(channel: discord.abc.Messageable | None, message: str) -> None:
+    if channel is None:
+        return
+    try:
+        await channel.send(message)
+    except discord.HTTPException:
+        logger.warning("Failed to post yt-dlp breakage notice")
 
 
 def cancel_idle_timer(guild_id: int) -> None:
@@ -141,11 +210,13 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
 
     def _after(error: Exception | None) -> None:
         stderr_text = stderr_buffer.getvalue().decode(errors="replace")
-        if _playback_likely_failed(error, stderr_text):
+        failed = _playback_likely_failed(error, stderr_text)
+        if failed:
             logger.error(
                 "Playback error for %s: %s\n%s", track.title, error, stderr_text[-_STDERR_LOG_TAIL:]
             )
             asyncio.run_coroutine_threadsafe(_notify_playback_failed(voice_client, track), loop)
+        asyncio.run_coroutine_threadsafe(_track_playback_outcome(voice_client, failed=failed), loop)
         asyncio.run_coroutine_threadsafe(play_next(voice_client), loop)
 
     voice_client.play(source, after=_after)

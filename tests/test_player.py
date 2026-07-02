@@ -1,3 +1,4 @@
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -51,6 +52,8 @@ def setup_function() -> None:
         task.cancel()
     player._idle_timers.clear()
     status_panel._panels.clear()
+    player._consecutive_playback_failures = 0
+    player._last_update_attempt_at = None
 
 
 async def test_ensure_voice_client_starts_idle_timer_before_posting_panel():
@@ -145,3 +148,84 @@ async def test_notify_playback_failed_is_a_noop_without_a_panel():
     track = SimpleNamespace(title="Some Song")
 
     await player._notify_playback_failed(voice_client, track)  # should not raise
+
+
+def _voice_client_for_guild(guild_id: int) -> MagicMock:
+    voice_client = MagicMock()
+    voice_client.guild = SimpleNamespace(id=guild_id)
+    return voice_client
+
+
+async def test_track_playback_outcome_resets_the_streak_on_success():
+    player._consecutive_playback_failures = 2
+    await player._track_playback_outcome(_voice_client_for_guild(501), failed=False)
+    assert player._consecutive_playback_failures == 0
+
+
+async def test_track_playback_outcome_does_not_trigger_below_the_threshold():
+    with patch.object(player, "_handle_suspected_yt_dlp_breakage", new=AsyncMock()) as mock_handle:
+        for _ in range(player._CONSECUTIVE_FAILURE_THRESHOLD - 1):
+            await player._track_playback_outcome(_voice_client_for_guild(502), failed=True)
+
+    mock_handle.assert_not_awaited()
+    assert player._consecutive_playback_failures == player._CONSECUTIVE_FAILURE_THRESHOLD - 1
+
+
+async def test_track_playback_outcome_triggers_and_resets_at_the_threshold():
+    with patch.object(player, "_handle_suspected_yt_dlp_breakage", new=AsyncMock()) as mock_handle:
+        for _ in range(player._CONSECUTIVE_FAILURE_THRESHOLD):
+            await player._track_playback_outcome(_voice_client_for_guild(503), failed=True)
+
+    mock_handle.assert_awaited_once()
+    assert player._consecutive_playback_failures == 0
+
+
+async def test_handle_suspected_breakage_notifies_and_restarts_when_yt_dlp_updates():
+    guild_id = 504
+    channel = MagicMock()
+    channel.send = AsyncMock()
+
+    with patch.object(status_panel, "get_channel", return_value=channel), \
+         patch.object(player.yt_dlp_updater, "update_yt_dlp", new=AsyncMock(return_value=("2026.6.9", "2026.7.1"))), \
+         patch.object(player.os, "_exit") as mock_exit:
+        await player._handle_suspected_yt_dlp_breakage(_voice_client_for_guild(guild_id))
+
+    assert channel.send.await_count == 2
+    assert "Checking for an update" in channel.send.await_args_list[0].args[0]
+    assert "2026.6.9 -> 2026.7.1" in channel.send.await_args_list[1].args[0]
+    mock_exit.assert_called_once_with(1)
+
+
+async def test_handle_suspected_breakage_does_not_restart_when_already_up_to_date():
+    guild_id = 505
+    channel = MagicMock()
+    channel.send = AsyncMock()
+
+    with patch.object(status_panel, "get_channel", return_value=channel), \
+         patch.object(player.yt_dlp_updater, "update_yt_dlp", new=AsyncMock(return_value=("2026.6.9", "2026.6.9"))), \
+         patch.object(player.os, "_exit") as mock_exit:
+        await player._handle_suspected_yt_dlp_breakage(_voice_client_for_guild(guild_id))
+
+    assert "already up to date" in channel.send.await_args_list[-1].args[0]
+    mock_exit.assert_not_called()
+
+
+async def test_handle_suspected_breakage_respects_the_cooldown():
+    guild_id = 506
+    channel = MagicMock()
+    channel.send = AsyncMock()
+    player._last_update_attempt_at = time.monotonic()  # just triggered a moment ago
+
+    with patch.object(status_panel, "get_channel", return_value=channel), \
+         patch.object(player.yt_dlp_updater, "update_yt_dlp", new=AsyncMock()) as mock_update:
+        await player._handle_suspected_yt_dlp_breakage(_voice_client_for_guild(guild_id))
+
+    mock_update.assert_not_awaited()
+    channel.send.assert_not_awaited()
+
+
+async def test_handle_suspected_breakage_tolerates_no_panel_channel():
+    guild_id = 507
+    with patch.object(status_panel, "get_channel", return_value=None), \
+         patch.object(player.yt_dlp_updater, "update_yt_dlp", new=AsyncMock(return_value=("2026.6.9", "2026.6.9"))):
+        await player._handle_suspected_yt_dlp_breakage(_voice_client_for_guild(guild_id))  # should not raise

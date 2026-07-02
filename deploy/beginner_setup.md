@@ -204,9 +204,12 @@ Press `Ctrl+C` to stop watching (this doesn't stop the bot itself).
 ## Step 9 (optional but recommended): keep yt-dlp updated automatically
 
 The bot relies on a tool called yt-dlp to pull audio from YouTube. YouTube periodically changes
-things that break older versions of it, more often than the bot's other components change. This
-sets up a weekly automatic check that updates it and restarts the bot only if a new version was
-actually found:
+things that break older versions of it, more often than the bot's other components change.
+
+The bot already reacts to this on its own: if 3 songs in a row fail to play, it'll post a message
+about it, try updating yt-dlp right then, and restart itself automatically if that fixed it -
+nothing to set up for that part. What this step adds is a weekly check that updates yt-dlp
+proactively, so most breakage never has a chance to happen in the first place:
 
 ```bash
 sed -e "s/User=pi/User=$(whoami)/" -e "s#/home/pi#$HOME#g" deploy/yt-dlp-update.service | sudo tee /etc/systemd/system/yt-dlp-update.service
