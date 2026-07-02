@@ -57,18 +57,12 @@ The first time the bot joins a voice channel in a server, it posts a live status
 text channel showing:
 
 - **Now Playing** - the current track and who requested it (or "Paused")
-- **Lyrics** - the current line of the song, synced to playback, when time-synced lyrics are
-  available for that track
 - **Up Next** - the next several queued tracks, in play order
 
 The panel updates itself automatically whenever something changes - a track starts, something
 gets queued, playback is paused or resumed - by reposting itself at the bottom of the channel and
 deleting the old version. That keeps it visible as the most recent message instead of sinking
 under newer chat. It's removed when the bot leaves the voice channel (`/leave`).
-
-The lyrics line is the one exception: it's edited in place every couple of seconds as the track
-plays, rather than reposting, so it doesn't spam the channel. If no synced lyrics are found for a
-track (instrumentals, obscure uploads, mismatched titles), the panel just omits the field.
 
 ## How it works
 
@@ -78,9 +72,6 @@ track (instrumentals, obscure uploads, mismatched titles), the panel just omits 
   anything that looks like talk content by duration and title/channel keywords, preferring
   official artist "Topic" channels (YouTube's auto-generated, music-only channels) when available.
 - `discord.py`'s `FFmpegPCMAudio` pipes that stream (via `ffmpeg`) straight into the voice channel.
-- [LRCLIB](https://lrclib.net) provides time-synced lyrics for the Now Playing panel, looked up by
-  guessing an artist/title from the track's messy YouTube title and channel name. If no match is
-  found, the panel just doesn't show a lyrics line.
 - A small local model served by Ollama (default: `qwen2.5:1.5b`) interprets free-text requests. It
   uses Ollama's structured output mode to decide which playback function to call (if any) as a
   schema-constrained JSON object, then dispatches to the same functions the slash commands use.
@@ -128,9 +119,6 @@ ground assuming no prior experience, starting from writing the OS onto the SD ca
   that project if you want to vet it yourself.
 - **All LLM processing is local.** Natural-language requests are sent to your own Ollama instance,
   never to a third-party AI API.
-- **Lyrics lookups leave your server.** The track's title and artist (guessed from YouTube
-  metadata, not your message content) are sent to LRCLIB's public API to fetch synced lyrics. No
-  other data is sent, and nothing is sent if the guessed title comes up empty.
 - **No secrets in this repo's git history** (verified via `git log -p` across all tracked files)
   and no server-specific hostnames/paths are committed - `deploy/discord-bot.service` and
   `deploy/setup_pi.md` use generic placeholders you fill in yourself.
