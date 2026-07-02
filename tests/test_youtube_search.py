@@ -173,12 +173,13 @@ def test_build_before_options_survives_shlex_roundtrip_with_embedded_crlf():
 
 
 async def test_resolve_stream_url_returns_before_options_with_headers():
-    fake_info = {"url": "https://x/stream", "http_headers": {"User-Agent": "abc"}}
+    fake_info = {"url": "https://x/stream", "http_headers": {"User-Agent": "abc"}, "acodec": "opus"}
     ydl = _fake_ydl(fake_info)
     track = _track_from_info({"title": "Song", "webpage_url": "https://x/1"}, "tester")
 
     with patch("bot.music.youtube.yt_dlp.YoutubeDL", return_value=ydl):
-        stream_url, before_options = await resolve_stream_url(track)
+        stream_url, before_options, acodec = await resolve_stream_url(track)
 
     assert stream_url == "https://x/stream"
     assert "-headers" in shlex.split(before_options)
+    assert acodec == "opus"

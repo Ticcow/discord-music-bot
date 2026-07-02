@@ -197,14 +197,26 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
 
     cancel_idle_timer(voice_client.guild.id)
 
-    stream_url, before_options = await resolve_stream_url(track)
+    stream_url, before_options, acodec = await resolve_stream_url(track)
     stderr_buffer = io.BytesIO()
-    source = discord.FFmpegPCMAudio(
-        stream_url,
-        before_options=before_options,
-        options=FFMPEG_OPTIONS,
-        stderr=stderr_buffer,
-    )
+    if acodec == "opus":
+        # The source is already Opus-encoded - remux it straight through instead of
+        # decoding to PCM and having discord.py re-encode it, which is a needless
+        # second lossy pass that both degrades quality and costs extra CPU.
+        source = discord.FFmpegOpusAudio(
+            stream_url,
+            before_options=before_options,
+            options=FFMPEG_OPTIONS,
+            codec="copy",
+            stderr=stderr_buffer,
+        )
+    else:
+        source = discord.FFmpegPCMAudio(
+            stream_url,
+            before_options=before_options,
+            options=FFMPEG_OPTIONS,
+            stderr=stderr_buffer,
+        )
 
     loop = asyncio.get_running_loop()
 

@@ -9,7 +9,7 @@ import yt_dlp
 logger = logging.getLogger(__name__)
 
 _BASE_OPTS = {
-    "format": "bestaudio/best",
+    "format": "bestaudio[acodec=opus]/bestaudio/best",
     "noplaylist": True,
     "quiet": True,
     "remote_components": ["ejs:github"],
@@ -127,10 +127,11 @@ def _build_before_options(http_headers: dict) -> str:
     return options
 
 
-def _resolve_sync(webpage_url: str) -> tuple[str, str]:
+def _resolve_sync(webpage_url: str) -> tuple[str, str, str | None]:
     with yt_dlp.YoutubeDL(_BASE_OPTS) as ydl:
         info = ydl.extract_info(webpage_url, download=False)
-        return info["url"], _build_before_options(info.get("http_headers") or {})
+        before_options = _build_before_options(info.get("http_headers") or {})
+        return info["url"], before_options, info.get("acodec")
 
 
 async def search(query: str, requested_by: str) -> Track:
@@ -156,7 +157,9 @@ async def search_many(query: str, count: int, requested_by: str) -> list[Track]:
     return tracks
 
 
-async def resolve_stream_url(track: Track) -> tuple[str, str]:
-    """Returns (direct stream URL, ffmpeg before_options). before_options carries
-    yt-dlp's http_headers - see _build_before_options for why that's required."""
+async def resolve_stream_url(track: Track) -> tuple[str, str, str | None]:
+    """Returns (direct stream URL, ffmpeg before_options, source audio codec).
+    before_options carries yt-dlp's http_headers - see _build_before_options for why
+    that's required. The codec (e.g. "opus", "mp4a.40.2") lets the caller decide
+    whether ffmpeg can remux the stream as-is or must transcode it."""
     return await asyncio.to_thread(_resolve_sync, track.webpage_url)
