@@ -53,7 +53,7 @@ pip install -r requirements.txt
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) and click **New Application**. Name it whatever you like.
 2. In the **Bot** tab, click **Add Bot**. Under **Privileged Gateway Intents**, enable **Message Content Intent** (needed so the bot can read `@mention` chat messages for the `/ask`-style natural language path).
 3. Still in the **Bot** tab, click **Reset Token** / **Copy** to get your bot token. Keep this secret - it goes in `.env` as `DISCORD_BOT_TOKEN`.
-4. In the **OAuth2 > URL Generator** tab, check the `bot` and `applications.commands` scopes, then under **Bot Permissions** check: `Send Messages`, `Read Message History`, `Connect`, `Speak`.
+4. In the **OAuth2 > URL Generator** tab, check the `bot` and `applications.commands` scopes, then under **Bot Permissions** check: `Send Messages`, `Embed Links`, `Read Message History`, `Connect`, `Speak`. `Embed Links` is required separately from `Send Messages` - without it, the now playing panel fails to post.
 5. Copy the generated URL, open it in a browser, and invite the bot to your server.
 
 ## 5. Configure environment

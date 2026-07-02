@@ -140,8 +140,9 @@ account, separate from anyone else's.
    ever leaks, come back here and reset it.
 6. In the left sidebar, click **OAuth2**, then scroll to **OAuth2 URL Generator**.
 7. Under **Scopes**, check `bot` and `applications.commands`.
-8. A **Bot Permissions** box appears below - check `Send Messages`, `Read Message History`,
-   `Connect`, and `Speak`.
+8. A **Bot Permissions** box appears below - check `Send Messages`, `Embed Links`,
+   `Read Message History`, `Connect`, and `Speak`. `Embed Links` is easy to miss but required -
+   without it, the now playing panel silently fails to post.
 9. Scroll down, copy the **Generated URL**, paste it into a new browser tab, pick your Discord
    server, and click **Authorize**. The bot will now appear (offline) in your server's member
    list.
@@ -209,6 +210,11 @@ Press `Ctrl+C` to stop watching (this doesn't stop the bot itself).
   Step 4 - one of the packages may not have installed successfully.
 - **Slash commands don't show up in Discord.** Wait a few minutes and try again, or try kicking
   and re-inviting the bot using the invite link from Step 6.
+- **`/play` gets stuck on "thinking..." and never responds.** This usually means the bot is
+  missing the `Embed Links` permission in that server, so it can't post the now playing panel.
+  Fix it without re-inviting: go to **Server Settings > Roles**, click the bot's role, and enable
+  `Embed Links`. (Music will actually still play even with this missing - only the persistent Now
+  Playing panel is affected - but it's worth fixing.)
 - **No sound when playing.** The audio streams directly to whoever's in the Discord voice channel
   on their own device - you don't need speakers connected to the Pi itself. Check
   `journalctl -u discord-bot.service -f` while running `/play` for errors from `ffmpeg` or
