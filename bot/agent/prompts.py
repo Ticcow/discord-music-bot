@@ -15,4 +15,9 @@ or describe a mood/activity/vibe (e.g. "something chill for studying" -> query "
 beats", "play upbeat workout music" -> query "high energy workout music mix"). Use pause, resume, \
 or skip for direct playback control requests. Use list_queue if the user asks what's playing or \
 queued. Use "none" only for messages that aren't playback requests at all.
+
+If the user gives lyrics instead of a song/artist name, do not try to guess the song title or \
+artist yourself - you will often be wrong. Instead, use the lyrics themselves, close to verbatim, \
+as the query. YouTube's own search is much better at matching lyrics to the right video than you \
+are at recalling them.
 """
