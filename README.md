@@ -16,7 +16,9 @@ commands or natural language routed through a locally-hosted LLM (Ollama).
   URL.
 - `discord.py`'s `FFmpegPCMAudio` pipes that stream (via `ffmpeg`) straight into the voice channel.
 - A small local model served by [Ollama](https://ollama.com) (default: `qwen2.5:1.5b`) interprets
-  free-text requests and calls the same playback functions as the slash commands via tool calling.
+  free-text requests. It uses Ollama's structured output mode to decide which playback function to
+  call (if any) as a schema-constrained JSON object, then dispatches to the same functions the
+  slash commands use.
 
 No Spotify account or API credentials are required - everything is sourced from YouTube.
 
@@ -32,6 +34,13 @@ python -m bot.main
 ```
 
 You'll also need `ffmpeg` installed and on your `PATH`.
+
+## Running tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Deploying to a Raspberry Pi
 
