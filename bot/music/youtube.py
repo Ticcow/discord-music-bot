@@ -10,6 +10,12 @@ _BASE_OPTS = {
     "remote_components": ["ejs:github"],
 }
 
+# Candidate search only needs title/duration/uploader to filter and pick a
+# winner, not a fully resolved stream - extract_flat skips the expensive
+# per-video page/player extraction (~6x faster for a handful of candidates)
+# and still exposes the fields the music filter needs.
+_SEARCH_OPTS = {**_BASE_OPTS, "extract_flat": True}
+
 FFMPEG_BEFORE_OPTIONS = (
     "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 )
@@ -26,9 +32,11 @@ class Track:
 
 
 def _track_from_info(info: dict, requested_by: str) -> Track:
+    # Flat-extracted search results only have "url"; fully-resolved info
+    # dicts have "webpage_url". Accept either.
     return Track(
         title=info.get("title", "Unknown title"),
-        webpage_url=info["webpage_url"],
+        webpage_url=info.get("webpage_url") or info["url"],
         duration=info.get("duration"),
         uploader=info.get("uploader"),
         requested_by=requested_by,
@@ -78,7 +86,7 @@ def _select_candidates(candidates: list[dict], count: int) -> list[dict]:
 
 def _search_sync(query: str, count: int) -> list[dict]:
     candidate_count = max(count * 4, 8)
-    with yt_dlp.YoutubeDL(_BASE_OPTS) as ydl:
+    with yt_dlp.YoutubeDL(_SEARCH_OPTS) as ydl:
         info = ydl.extract_info(f"ytsearch{candidate_count}:{query}", download=False)
         candidates = [e for e in info.get("entries", []) if e]
         if not candidates:

@@ -1,4 +1,4 @@
-from bot.music.youtube import _looks_like_music, _select_candidates
+from bot.music.youtube import _looks_like_music, _select_candidates, _track_from_info
 
 
 def _entry(title="Song Title", uploader="Some Artist", duration=180, webpage_url="https://x/1"):
@@ -70,3 +70,16 @@ def test_select_candidates_respects_count():
     chosen = _select_candidates(candidates, count=3)
 
     assert len(chosen) == 3
+
+
+def test_track_from_info_uses_webpage_url_when_present():
+    # Fully-resolved info dicts (e.g. from resolving a chosen track's stream).
+    track = _track_from_info({"title": "Song", "webpage_url": "https://x/full"}, "tester")
+    assert track.webpage_url == "https://x/full"
+
+
+def test_track_from_info_falls_back_to_url_for_flat_extracted_entries():
+    # Flat-extracted search candidates only have "url", not "webpage_url" -
+    # regression guard since this silently KeyErrors if the fallback is lost.
+    track = _track_from_info({"title": "Song", "url": "https://x/flat"}, "tester")
+    assert track.webpage_url == "https://x/flat"
