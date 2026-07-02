@@ -8,10 +8,13 @@ logger = logging.getLogger(__name__)
 
 _panels: dict[int, discord.Message] = {}
 
+CATJAM_GIF_URL = "https://media.tenor.com/hKxzQiQ8GMgAAAAj/cat-jam-cat.gif"
+
 
 def _build_embed(guild_id: int, is_paused: bool) -> discord.Embed:
     guild_queue = queues.get(guild_id)
     embed = discord.Embed(title="DJ OLLAMA", color=discord.Color.blurple())
+    embed.set_thumbnail(url=CATJAM_GIF_URL)
 
     if guild_queue.now_playing:
         status = "Paused" if is_paused else "Now Playing"

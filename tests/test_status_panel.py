@@ -76,6 +76,11 @@ async def test_refresh_reposts_panel_as_a_new_message_at_the_bottom():
     assert "Now Playing Song" in embed.fields[0].value
 
 
+def test_build_embed_includes_catjam_thumbnail():
+    embed = status_panel._build_embed(107, is_paused=False)
+    assert embed.thumbnail.url == status_panel.CATJAM_GIF_URL
+
+
 async def test_ensure_panel_swallows_permission_errors():
     # If the bot lacks Send Messages/Embed Links in the channel, ensure_panel must not
     # raise - an unhandled exception here previously aborted /play entirely, leaving the
