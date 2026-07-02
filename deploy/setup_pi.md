@@ -1,5 +1,9 @@
 # Raspberry Pi 5 (4GB) setup
 
+New to terminals, Linux, or git? Follow [beginner_setup.md](beginner_setup.md) instead - it covers
+the same setup with no assumed experience, including flashing the SD card and connecting over SSH
+for the first time.
+
 ## 1. System packages
 
 ```bash

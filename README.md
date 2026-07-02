@@ -98,7 +98,9 @@ pytest
 ## Deploying to a Raspberry Pi
 
 See [deploy/setup_pi.md](deploy/setup_pi.md) for a full walkthrough, including creating the
-Discord bot application and running the bot as a systemd service alongside Ollama.
+Discord bot application and running the bot as a systemd service alongside Ollama. Never used a
+terminal or Linux before? [deploy/beginner_setup.md](deploy/beginner_setup.md) covers the same
+ground assuming no prior experience, starting from writing the OS onto the SD card.
 
 ## Security & privacy considerations
 
