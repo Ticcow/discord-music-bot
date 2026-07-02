@@ -29,6 +29,13 @@ _YOUTUBE_URL_RE = re.compile(
 _FFMPEG_RECONNECT_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
 
+# What Discord's voice gateway requires. ffmpeg's `-c:a copy` remux path
+# skips encoding entirely, so unlike a real transcode it can't correct a
+# mismatched sample rate or channel layout - a source that isn't already an
+# exact match would come out pitched, sped up, or with garbled channels.
+_DISCORD_OPUS_SAMPLE_RATE = 48000
+_DISCORD_OPUS_CHANNELS = 2
+
 
 @dataclass
 class Track:
@@ -127,11 +134,19 @@ def _build_before_options(http_headers: dict) -> str:
     return options
 
 
-def _resolve_sync(webpage_url: str) -> tuple[str, str, str | None]:
+def _can_remux_as_opus(info: dict) -> bool:
+    return (
+        info.get("acodec") == "opus"
+        and info.get("asr") == _DISCORD_OPUS_SAMPLE_RATE
+        and info.get("audio_channels") == _DISCORD_OPUS_CHANNELS
+    )
+
+
+def _resolve_sync(webpage_url: str) -> tuple[str, str, bool]:
     with yt_dlp.YoutubeDL(_BASE_OPTS) as ydl:
         info = ydl.extract_info(webpage_url, download=False)
         before_options = _build_before_options(info.get("http_headers") or {})
-        return info["url"], before_options, info.get("acodec")
+        return info["url"], before_options, _can_remux_as_opus(info)
 
 
 async def search(query: str, requested_by: str) -> Track:
@@ -157,9 +172,10 @@ async def search_many(query: str, count: int, requested_by: str) -> list[Track]:
     return tracks
 
 
-async def resolve_stream_url(track: Track) -> tuple[str, str, str | None]:
-    """Returns (direct stream URL, ffmpeg before_options, source audio codec).
+async def resolve_stream_url(track: Track) -> tuple[str, str, bool]:
+    """Returns (direct stream URL, ffmpeg before_options, can_remux_as_opus).
     before_options carries yt-dlp's http_headers - see _build_before_options for why
-    that's required. The codec (e.g. "opus", "mp4a.40.2") lets the caller decide
-    whether ffmpeg can remux the stream as-is or must transcode it."""
+    that's required. can_remux_as_opus is True only when the source is already
+    Opus-encoded at the exact sample rate/channel layout Discord expects, so the
+    caller can skip a needless (and lossy) PCM transcode."""
     return await asyncio.to_thread(_resolve_sync, track.webpage_url)

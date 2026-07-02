@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from bot.music.youtube import (
     _build_before_options,
+    _can_remux_as_opus,
     _looks_like_music,
     _looks_like_youtube_url,
     _select_candidates,
@@ -173,13 +174,47 @@ def test_build_before_options_survives_shlex_roundtrip_with_embedded_crlf():
 
 
 async def test_resolve_stream_url_returns_before_options_with_headers():
-    fake_info = {"url": "https://x/stream", "http_headers": {"User-Agent": "abc"}, "acodec": "opus"}
+    fake_info = {
+        "url": "https://x/stream", "http_headers": {"User-Agent": "abc"},
+        "acodec": "opus", "asr": 48000, "audio_channels": 2,
+    }
     ydl = _fake_ydl(fake_info)
     track = _track_from_info({"title": "Song", "webpage_url": "https://x/1"}, "tester")
 
     with patch("bot.music.youtube.yt_dlp.YoutubeDL", return_value=ydl):
-        stream_url, before_options, acodec = await resolve_stream_url(track)
+        stream_url, before_options, can_remux_as_opus = await resolve_stream_url(track)
 
     assert stream_url == "https://x/stream"
     assert "-headers" in shlex.split(before_options)
-    assert acodec == "opus"
+    assert can_remux_as_opus is True
+
+
+def _opus_info(**overrides) -> dict:
+    info = {"acodec": "opus", "asr": 48000, "audio_channels": 2}
+    info.update(overrides)
+    return info
+
+
+def test_can_remux_as_opus_true_for_opus_48k_stereo():
+    assert _can_remux_as_opus(_opus_info()) is True
+
+
+def test_can_remux_as_opus_false_for_a_non_opus_codec():
+    assert _can_remux_as_opus(_opus_info(acodec="mp4a.40.2")) is False
+
+
+def test_can_remux_as_opus_false_for_mismatched_sample_rate():
+    # ffmpeg's -c:a copy skips encoding entirely, so it can't correct a
+    # sample rate mismatch the way a real transcode would - trusting this
+    # blindly would risk pitched/sped-up audio for the rare non-48kHz format.
+    assert _can_remux_as_opus(_opus_info(asr=44100)) is False
+
+
+def test_can_remux_as_opus_false_for_mono():
+    assert _can_remux_as_opus(_opus_info(audio_channels=1)) is False
+
+
+def test_can_remux_as_opus_false_when_fields_are_missing():
+    # extract_flat results and some edge-case formats omit these entirely -
+    # missing must be treated the same as "don't know", not "assume safe".
+    assert _can_remux_as_opus({}) is False

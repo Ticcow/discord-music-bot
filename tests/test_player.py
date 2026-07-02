@@ -6,6 +6,8 @@ import discord
 
 from bot.music import player, status_panel
 from bot.music.player import is_authorized
+from bot.music.queue import queues
+from bot.music.youtube import Track
 
 
 def _member(channel_id: int | None) -> MagicMock:
@@ -229,3 +231,44 @@ async def test_handle_suspected_breakage_tolerates_no_panel_channel():
     with patch.object(status_panel, "get_channel", return_value=None), \
          patch.object(player.yt_dlp_updater, "update_yt_dlp", new=AsyncMock(return_value=("2026.6.9", "2026.6.9"))):
         await player._handle_suspected_yt_dlp_breakage(_voice_client_for_guild(guild_id))  # should not raise
+
+
+def _queued_track(guild_id: int) -> Track:
+    track = Track(title="Song", webpage_url="https://x/1", duration=200, uploader="Artist", requested_by="tester")
+    queues.get(guild_id).add_priority(track)
+    return track
+
+
+async def test_play_next_remuxes_with_ffmpeg_opus_audio_when_source_is_already_opus():
+    guild_id = 601
+    voice_client = MagicMock()
+    voice_client.guild = SimpleNamespace(id=guild_id)
+    voice_client.is_connected.return_value = True
+    _queued_track(guild_id)
+
+    with patch.object(player, "resolve_stream_url", new=AsyncMock(return_value=("https://stream", "-vn", True))), \
+         patch("bot.music.player.discord.FFmpegOpusAudio", return_value=MagicMock()) as mock_opus, \
+         patch("bot.music.player.discord.FFmpegPCMAudio", return_value=MagicMock()) as mock_pcm, \
+         patch.object(status_panel, "refresh", new=AsyncMock()):
+        await player.play_next(voice_client)
+
+    mock_opus.assert_called_once()
+    mock_pcm.assert_not_called()
+    assert mock_opus.call_args.kwargs["codec"] == "copy"
+
+
+async def test_play_next_transcodes_with_ffmpeg_pcm_audio_when_source_is_not_remuxable():
+    guild_id = 602
+    voice_client = MagicMock()
+    voice_client.guild = SimpleNamespace(id=guild_id)
+    voice_client.is_connected.return_value = True
+    _queued_track(guild_id)
+
+    with patch.object(player, "resolve_stream_url", new=AsyncMock(return_value=("https://stream", "-vn", False))), \
+         patch("bot.music.player.discord.FFmpegOpusAudio", return_value=MagicMock()) as mock_opus, \
+         patch("bot.music.player.discord.FFmpegPCMAudio", return_value=MagicMock()) as mock_pcm, \
+         patch.object(status_panel, "refresh", new=AsyncMock()):
+        await player.play_next(voice_client)
+
+    mock_pcm.assert_called_once()
+    mock_opus.assert_not_called()

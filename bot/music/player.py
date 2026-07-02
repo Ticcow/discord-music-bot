@@ -197,9 +197,9 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
 
     cancel_idle_timer(voice_client.guild.id)
 
-    stream_url, before_options, acodec = await resolve_stream_url(track)
+    stream_url, before_options, can_remux_as_opus = await resolve_stream_url(track)
     stderr_buffer = io.BytesIO()
-    if acodec == "opus":
+    if can_remux_as_opus:
         # The source is already Opus-encoded - remux it straight through instead of
         # decoding to PCM and having discord.py re-encode it, which is a needless
         # second lossy pass that both degrades quality and costs extra CPU.
