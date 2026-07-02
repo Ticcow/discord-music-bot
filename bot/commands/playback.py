@@ -24,9 +24,7 @@ class PlaybackCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="play", description="Search YouTube and play/queue a track")
-    @app_commands.describe(query="Song name, artist, or YouTube search terms")
-    async def play(self, interaction: discord.Interaction, query: str) -> None:
+    async def _search_and_queue(self, interaction: discord.Interaction, query: str) -> None:
         await interaction.response.defer()
 
         if not await _check_authorized(interaction, deferred=True):
@@ -44,6 +42,16 @@ class PlaybackCog(commands.Cog):
 
         await player.enqueue_priority(voice_client, track)
         await interaction.followup.send(f"Queued **{track.title}** - up next.")
+
+    @app_commands.command(name="play", description="Search YouTube and play/queue a track")
+    @app_commands.describe(query="Song name, artist, or YouTube search terms")
+    async def play(self, interaction: discord.Interaction, query: str) -> None:
+        await self._search_and_queue(interaction, query)
+
+    @app_commands.command(name="lyrics", description="Find a song by its lyrics and play it")
+    @app_commands.describe(lyrics="A line or two from the song")
+    async def lyrics(self, interaction: discord.Interaction, lyrics: str) -> None:
+        await self._search_and_queue(interaction, lyrics)
 
     @app_commands.command(name="pause", description="Pause playback")
     async def pause(self, interaction: discord.Interaction) -> None:

@@ -12,6 +12,7 @@ everything runs from YouTube and your own machine.
 | `/join` | Connects the bot to your current voice channel and posts the [now playing panel](#the-now-playing-panel). |
 | `/leave` | Disconnects the bot, clears the queue, and removes the panel. |
 | `/play <query>` | Searches YouTube for a specific song/artist and queues it to play **next** - ahead of anything already queued by `/ask`. Starts playing immediately if nothing else is. |
+| `/lyrics <lyrics>` | Same as `/play`, but for when you only know a line or two of the song rather than its name - just paste the lyrics. |
 | `/pause` | Pauses the current track. |
 | `/resume` | Resumes a paused track. |
 | `/skip` | Skips to the next queued track. |
@@ -19,9 +20,9 @@ everything runs from YouTube and your own machine.
 | `/ask <message>` | Natural-language control - e.g. *"play something chill for studying"* or *"what's playing?"*. A local LLM decides which action to take. |
 | `@BotName <message>` | Same as `/ask`, but by mentioning the bot in a message instead of using a slash command. |
 
-Once a session is active, all playback control commands (`/play`, `/pause`, `/resume`, `/skip`,
-`/ask`) require you to be in the bot's voice channel - someone elsewhere in the server can't
-hijack a session they're not part of. `/join`, `/leave`, and `/queue` stay open to everyone.
+Once a session is active, all playback control commands (`/play`, `/lyrics`, `/pause`, `/resume`,
+`/skip`, `/ask`) require you to be in the bot's voice channel - someone elsewhere in the server
+can't hijack a session they're not part of. `/join`, `/leave`, and `/queue` stay open to everyone.
 
 ### Natural language examples
 
