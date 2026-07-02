@@ -1,3 +1,5 @@
+import json
+
 import discord
 import ollama
 
@@ -6,8 +8,29 @@ from bot.agent.tools import TOOL_SCHEMAS, execute_tool
 from bot.config import settings
 
 _client = ollama.AsyncClient(host=settings.ollama_host)
+_TOOL_NAMES = {tool["function"]["name"] for tool in TOOL_SCHEMAS}
 
 MAX_TOOL_ROUNDS = 4
+
+
+def _extract_inline_tool_call(content: str) -> tuple[str, dict] | None:
+    """Some small models write a tool call as JSON text instead of using the
+    API's structured tool_calls field. Scan for a {"name": ..., "arguments": ...}
+    object embedded in the reply and treat it as a tool call if found."""
+    decoder = json.JSONDecoder()
+    idx = content.find("{")
+    while idx != -1:
+        try:
+            obj, _ = decoder.raw_decode(content, idx)
+        except json.JSONDecodeError:
+            idx = content.find("{", idx + 1)
+            continue
+        if isinstance(obj, dict) and obj.get("name") in _TOOL_NAMES and isinstance(
+            obj.get("arguments"), dict
+        ):
+            return obj["name"], obj["arguments"]
+        idx = content.find("{", idx + 1)
+    return None
 
 
 async def ask(
@@ -31,7 +54,12 @@ async def ask(
 
         tool_calls = message.get("tool_calls")
         if not tool_calls:
-            return (message.get("content") or "").strip() or "Done."
+            content = (message.get("content") or "").strip()
+            inline_call = _extract_inline_tool_call(content)
+            if inline_call is None:
+                return content or "Done."
+            name, arguments = inline_call
+            return await execute_tool(name, arguments, voice_client, requested_by)
 
         for call in tool_calls:
             function = call["function"]
