@@ -22,7 +22,18 @@ class MusicBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.voice_states = True
-        super().__init__(command_prefix="!", intents=intents)
+        # Track titles come from YouTube video metadata, which is entirely
+        # attacker-controlled (anyone can upload a video titled "<@user_id>"),
+        # and titles get echoed back into plain message content in /queue, /play,
+        # and /ask replies. Block @everyone/roles/arbitrary user pings globally so
+        # a malicious title can't ping anyone; keep replied_user so @mention chat
+        # still notifies the person the bot is actually replying to.
+        allowed_mentions = discord.AllowedMentions(
+            everyone=False, users=False, roles=False, replied_user=True
+        )
+        super().__init__(
+            command_prefix="!", intents=intents, allowed_mentions=allowed_mentions
+        )
 
     async def setup_hook(self) -> None:
         for extension in EXTENSIONS:
