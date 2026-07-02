@@ -12,6 +12,10 @@ def _not_found() -> discord.NotFound:
     return discord.NotFound(SimpleNamespace(status=404, reason="Not Found"), "Unknown Message")
 
 
+def _server_error() -> discord.HTTPException:
+    return discord.HTTPException(SimpleNamespace(status=500, reason="Server Error"), "boom")
+
+
 def _track(title: str) -> Track:
     return Track(
         title=title, webpage_url=f"https://x/{title}", duration=180, uploader=None,
@@ -19,10 +23,17 @@ def _track(title: str) -> Track:
     )
 
 
-def _fake_channel(message: discord.Message) -> MagicMock:
+def _fake_channel() -> MagicMock:
     channel = MagicMock()
-    channel.send = AsyncMock(return_value=message)
+    channel.send = AsyncMock()
     return channel
+
+
+def _fake_message(channel: MagicMock) -> MagicMock:
+    message = MagicMock()
+    message.channel = channel
+    message.delete = AsyncMock()
+    return message
 
 
 def _fake_voice_client(guild_id: int, *, paused: bool = False) -> MagicMock:
@@ -38,7 +49,8 @@ def setup_function() -> None:
 
 async def test_ensure_panel_only_posts_once():
     guild_id = 101
-    channel = _fake_channel(MagicMock())
+    channel = _fake_channel()
+    channel.send.return_value = _fake_message(channel)
 
     await status_panel.ensure_panel(channel, guild_id)
     await status_panel.ensure_panel(channel, guild_id)
@@ -46,18 +58,21 @@ async def test_ensure_panel_only_posts_once():
     channel.send.assert_awaited_once()
 
 
-async def test_refresh_edits_the_existing_panel():
+async def test_refresh_reposts_panel_as_a_new_message_at_the_bottom():
     guild_id = 102
     queues.get(guild_id).now_playing = _track("Now Playing Song")
-    message = MagicMock()
-    message.edit = AsyncMock()
-    channel = _fake_channel(message)
+    channel = _fake_channel()
+    old_message = _fake_message(channel)
+    new_message = _fake_message(channel)
+    channel.send.side_effect = [old_message, new_message]
 
     await status_panel.ensure_panel(channel, guild_id)
     await status_panel.refresh(_fake_voice_client(guild_id))
 
-    message.edit.assert_awaited_once()
-    embed = message.edit.call_args.kwargs["embed"]
+    assert channel.send.await_count == 2
+    old_message.delete.assert_awaited_once()
+    assert status_panel._panels[guild_id] is new_message
+    embed = channel.send.call_args.kwargs["embed"]
     assert "Now Playing Song" in embed.fields[0].value
 
 
@@ -65,26 +80,39 @@ async def test_refresh_is_a_noop_when_no_panel_exists():
     await status_panel.refresh(_fake_voice_client(999))  # should not raise
 
 
-async def test_refresh_drops_panel_on_not_found_so_it_can_be_recreated():
+async def test_refresh_ignores_not_found_when_deleting_old_message():
+    # The old panel message may already be gone (deleted by a user, etc.).
     guild_id = 103
-    message = MagicMock()
-    message.edit = AsyncMock(side_effect=_not_found())
-    channel = _fake_channel(message)
+    channel = _fake_channel()
+    old_message = _fake_message(channel)
+    old_message.delete = AsyncMock(side_effect=_not_found())
+    new_message = _fake_message(channel)
+    channel.send.side_effect = [old_message, new_message]
+
+    await status_panel.ensure_panel(channel, guild_id)
+    await status_panel.refresh(_fake_voice_client(guild_id))  # should not raise
+
+    assert status_panel._panels[guild_id] is new_message
+
+
+async def test_refresh_keeps_old_panel_if_repost_fails():
+    guild_id = 105
+    channel = _fake_channel()
+    old_message = _fake_message(channel)
+    channel.send.side_effect = [old_message, _server_error()]
 
     await status_panel.ensure_panel(channel, guild_id)
     await status_panel.refresh(_fake_voice_client(guild_id))
 
-    assert guild_id not in status_panel._panels
-
-    await status_panel.ensure_panel(channel, guild_id)
-    assert channel.send.await_count == 2
+    assert status_panel._panels[guild_id] is old_message
+    old_message.delete.assert_not_awaited()
 
 
 async def test_clear_panel_deletes_message_and_allows_recreation():
     guild_id = 104
-    message = MagicMock()
-    message.delete = AsyncMock()
-    channel = _fake_channel(message)
+    channel = _fake_channel()
+    message = _fake_message(channel)
+    channel.send.return_value = message
 
     await status_panel.ensure_panel(channel, guild_id)
     await status_panel.clear_panel(guild_id)

@@ -1,6 +1,10 @@
+import logging
+
 import discord
 
 from bot.music.queue import queues
+
+logger = logging.getLogger(__name__)
 
 _panels: dict[int, discord.Message] = {}
 
@@ -37,14 +41,26 @@ async def ensure_panel(channel: discord.abc.Messageable, guild_id: int) -> None:
 
 
 async def refresh(voice_client: discord.VoiceClient) -> None:
-    message = _panels.get(voice_client.guild.id)
-    if message is None:
+    """Repost the panel as a new message so it stays at the bottom of the
+    channel (the most recent message) instead of sinking under newer chat
+    as an edited-in-place message would."""
+    guild_id = voice_client.guild.id
+    old_message = _panels.get(guild_id)
+    if old_message is None:
         return
-    embed = _build_embed(voice_client.guild.id, is_paused=voice_client.is_paused())
+
+    embed = _build_embed(guild_id, is_paused=voice_client.is_paused())
     try:
-        await message.edit(embed=embed)
+        new_message = await old_message.channel.send(embed=embed)
+    except discord.HTTPException:
+        logger.warning("Failed to repost status panel for guild %s", guild_id)
+        return
+
+    _panels[guild_id] = new_message
+    try:
+        await old_message.delete()
     except discord.NotFound:
-        _panels.pop(voice_client.guild.id, None)
+        pass
 
 
 async def clear_panel(guild_id: int) -> None:
