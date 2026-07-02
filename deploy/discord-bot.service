@@ -1,0 +1,17 @@
+[Unit]
+Description=Discord Music Bot
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/discord-music-bot
+Environment=PATH=/home/pi/.deno/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=/home/pi/discord-music-bot/.env
+ExecStart=/home/pi/discord-music-bot/.venv/bin/python -m bot.main
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
