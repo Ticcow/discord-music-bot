@@ -4,60 +4,7 @@ from bot.music import player
 from bot.music.queue import queues
 from bot.music.youtube import search
 
-TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_and_play",
-            "description": (
-                "Search YouTube for a track and play it. If something is already playing, "
-                "the track is added to the end of the queue instead."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "A YouTube search query for the song, artist, or vibe requested.",
-                    }
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "pause",
-            "description": "Pause the currently playing track.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "resume",
-            "description": "Resume a paused track.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "skip",
-            "description": "Skip the currently playing track and move to the next queued track.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_queue",
-            "description": "List the currently playing track and the upcoming queue.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-]
+VALID_TOOL_NAMES = ("search_and_play", "pause", "resume", "skip", "list_queue", "none")
 
 
 async def execute_tool(
