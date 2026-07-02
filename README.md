@@ -1,29 +1,70 @@
 # Discord Music Bot
 
-A Discord bot that streams audio from YouTube into a voice channel, controllable with slash
-commands or natural language routed through a locally-hosted LLM (Ollama).
+A Discord bot that streams audio from YouTube into a voice channel. Control it with direct slash
+commands, or talk to it in plain English and let a locally-hosted LLM (via [Ollama](https://ollama.com))
+figure out what you want. No Spotify account, API keys, or third-party AI service required -
+everything runs from YouTube and your own machine.
 
-## Features
+## Commands
 
-- `/join`, `/leave` - voice channel management
-- `/play <query>`, `/pause`, `/resume`, `/skip`, `/queue` - direct playback control
-- `/ask <message>` or `@bot <message>` - natural language control via a local Ollama model
-  (e.g. "play something chill for studying")
-- A live "now playing" panel that reposts itself at the bottom of the channel as the queue changes
-- Playback control commands require being in the bot's voice channel once a session is active, so
-  someone elsewhere in the server can't hijack a session they're not part of
+| Command | What it does |
+| --- | --- |
+| `/join` | Connects the bot to your current voice channel and posts the [now playing panel](#the-now-playing-panel). |
+| `/leave` | Disconnects the bot, clears the queue, and removes the panel. |
+| `/play <query>` | Searches YouTube for a specific song/artist and queues it to play **next** - ahead of anything already queued by `/ask`. Starts playing immediately if nothing else is. |
+| `/pause` | Pauses the current track. |
+| `/resume` | Resumes a paused track. |
+| `/skip` | Skips to the next queued track. |
+| `/queue` | Shows what's currently playing and what's up next. |
+| `/ask <message>` | Natural-language control - e.g. *"play something chill for studying"* or *"what's playing?"*. A local LLM decides which action to take. |
+| `@BotName <message>` | Same as `/ask`, but by mentioning the bot in a message instead of using a slash command. |
+
+Once a session is active, all playback control commands (`/play`, `/pause`, `/resume`, `/skip`,
+`/ask`) require you to be in the bot's voice channel - someone elsewhere in the server can't
+hijack a session they're not part of. `/join`, `/leave`, and `/queue` stay open to everyone.
+
+### Natural language examples
+
+- *"play some early 2000s hip hop"* - searches and queues a short batch of matching tracks
+- *"pause the music"*
+- *"skip this"*
+- *"what's playing right now?"*
+
+### Two queue lanes
+
+Tracks queue into one of two lanes:
+
+- **Priority** (`/play`) - plays next, in the order requested.
+- **Ambient** (`/ask` vibe/artist requests) - queues a short batch of related tracks (3 by
+  default) for a listening session, and yields to anything in the priority lane.
+
+A `/play` request always "leapfrogs" ahead of whatever's left in an ambient batch, so you're never
+stuck waiting through someone else's autoplay session to hear the specific song you asked for.
+
+## The Now Playing panel
+
+The first time the bot joins a voice channel in a server, it posts a live status panel to that
+text channel showing:
+
+- **Now Playing** - the current track and who requested it (or "Paused")
+- **Up Next** - the next several queued tracks, in play order
+
+The panel updates itself automatically whenever something changes - a track starts, something
+gets queued, playback is paused or resumed - by reposting itself at the bottom of the channel and
+deleting the old version. That keeps it visible as the most recent message instead of sinking
+under newer chat. It's removed when the bot leaves the voice channel (`/leave`).
 
 ## How it works
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) resolves a search query to a direct, streamable audio
-  URL.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) searches YouTube and resolves the winning result to a
+  direct, streamable audio URL. Plain search results often mix in podcasts, interviews, and
+  reaction videos alongside real tracks, so searches pull a wider candidate pool and filter out
+  anything that looks like talk content by duration and title/channel keywords, preferring
+  official artist "Topic" channels (YouTube's auto-generated, music-only channels) when available.
 - `discord.py`'s `FFmpegPCMAudio` pipes that stream (via `ffmpeg`) straight into the voice channel.
-- A small local model served by [Ollama](https://ollama.com) (default: `qwen2.5:1.5b`) interprets
-  free-text requests. It uses Ollama's structured output mode to decide which playback function to
-  call (if any) as a schema-constrained JSON object, then dispatches to the same functions the
-  slash commands use.
-
-No Spotify account or API credentials are required - everything is sourced from YouTube.
+- A small local model served by Ollama (default: `qwen2.5:1.5b`) interprets free-text requests. It
+  uses Ollama's structured output mode to decide which playback function to call (if any) as a
+  schema-constrained JSON object, then dispatches to the same functions the slash commands use.
 
 ## Local development
 
