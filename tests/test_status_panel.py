@@ -81,6 +81,11 @@ def test_build_embed_includes_catjam_thumbnail():
     assert embed.thumbnail.url == status_panel.CATJAM_GIF_URL
 
 
+def test_build_embed_includes_command_help_footer():
+    embed = status_panel._build_embed(108, is_paused=False)
+    assert embed.footer.text == status_panel.HELP_FOOTER_TEXT
+
+
 async def test_ensure_panel_swallows_permission_errors():
     # If the bot lacks Send Messages/Embed Links in the channel, ensure_panel must not
     # raise - an unhandled exception here previously aborted /play entirely, leaving the
