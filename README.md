@@ -11,7 +11,7 @@ everything runs from YouTube and your own machine.
 | --- | --- |
 | `/join` | Connects the bot to your current voice channel and posts the [now playing panel](#the-now-playing-panel). |
 | `/leave` | Disconnects the bot, clears the queue, and removes the panel. |
-| `/play <query>` | Searches YouTube for a specific song/artist and queues it to play **next** - ahead of anything already queued by `/ask`. Starts playing immediately if nothing else is. |
+| `/play <query>` | Searches YouTube for a specific song/artist and queues it to play **next** - ahead of anything already queued by `/ask`. Also accepts a direct YouTube link, which plays that exact video instead of searching. Starts playing immediately if nothing else is. |
 | `/lyrics <lyrics>` | Same as `/play`, but for when you only know a line or two of the song rather than its name - just paste the lyrics. |
 | `/pause` | Pauses the current track. |
 | `/resume` | Resumes a paused track. |

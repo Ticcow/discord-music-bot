@@ -1,7 +1,11 @@
 import asyncio
+import logging
+import re
 from dataclasses import dataclass
 
 import yt_dlp
+
+logger = logging.getLogger(__name__)
 
 _BASE_OPTS = {
     "format": "bestaudio/best",
@@ -15,6 +19,11 @@ _BASE_OPTS = {
 # per-video page/player extraction (~6x faster for a handful of candidates)
 # and still exposes the fields the music filter needs.
 _SEARCH_OPTS = {**_BASE_OPTS, "extract_flat": True}
+
+_YOUTUBE_URL_RE = re.compile(
+    r"^https?://(www\.|music\.|m\.)?(youtube\.com/(watch\?v=|shorts/)|youtu\.be/)",
+    re.IGNORECASE,
+)
 
 FFMPEG_BEFORE_OPTIONS = (
     "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
@@ -94,6 +103,18 @@ def _search_sync(query: str, count: int) -> list[dict]:
         return _select_candidates(candidates, count)
 
 
+def _looks_like_youtube_url(query: str) -> bool:
+    return bool(_YOUTUBE_URL_RE.match(query))
+
+
+def _lookup_url_sync(url: str) -> dict:
+    # Flat extraction here mirrors _search_sync's candidate lookup: cheap
+    # metadata only (title/duration/uploader), no stream resolution. The
+    # actual stream URL is still resolved lazily at play time.
+    with yt_dlp.YoutubeDL(_SEARCH_OPTS) as ydl:
+        return ydl.extract_info(url, download=False)
+
+
 def _resolve_sync(webpage_url: str) -> str:
     with yt_dlp.YoutubeDL(_BASE_OPTS) as ydl:
         info = ydl.extract_info(webpage_url, download=False)
@@ -101,13 +122,26 @@ def _resolve_sync(webpage_url: str) -> str:
 
 
 async def search(query: str, requested_by: str) -> Track:
-    entries = await asyncio.to_thread(_search_sync, query, 1)
-    return _track_from_info(entries[0], requested_by)
+    query = query.strip()
+    if query.startswith("<") and query.endswith(">"):
+        query = query[1:-1]
+
+    if _looks_like_youtube_url(query):
+        info = await asyncio.to_thread(_lookup_url_sync, query)
+        track = _track_from_info(info, requested_by)
+    else:
+        entries = await asyncio.to_thread(_search_sync, query, 1)
+        track = _track_from_info(entries[0], requested_by)
+
+    logger.info("search %r -> %r", query, track.title)
+    return track
 
 
 async def search_many(query: str, count: int, requested_by: str) -> list[Track]:
     entries = await asyncio.to_thread(_search_sync, query, count)
-    return [_track_from_info(entry, requested_by) for entry in entries]
+    tracks = [_track_from_info(entry, requested_by) for entry in entries]
+    logger.info("search %r -> %s", query, [t.title for t in tracks])
+    return tracks
 
 
 async def resolve_stream_url(track: Track) -> str:
