@@ -51,6 +51,14 @@ class VoiceCog(commands.Cog):
         before: discord.VoiceState,
         after: discord.VoiceState,
     ) -> None:
+        if member.id == self.bot.user.id:
+            # The bot's own connection ended (kicked, moved somewhere it can't
+            # follow, dropped, etc.) without going through /leave or the idle
+            # timeout - clean up the panel/queue/timer so they don't linger.
+            if before.channel is not None and after.channel is None:
+                await player.cleanup_after_external_disconnect(member.guild.id)
+            return
+
         if member.bot:
             return
 

@@ -50,6 +50,7 @@ def setup_function() -> None:
     for task in player._idle_timers.values():
         task.cancel()
     player._idle_timers.clear()
+    status_panel._panels.clear()
 
 
 async def test_ensure_voice_client_starts_idle_timer_before_posting_panel():
@@ -76,3 +77,30 @@ async def test_ensure_voice_client_starts_idle_timer_before_posting_panel():
 
     assert guild_id in player._idle_timers
     player.cancel_idle_timer(guild_id)
+
+
+async def test_cleanup_after_external_disconnect_clears_timer_and_panel():
+    # Covers the case where the bot's voice connection ends without /leave or
+    # the idle timeout ever running (kicked, moved, dropped connection) - the
+    # panel/timer bookkeeping must not be left pointing at a dead session.
+    guild_id = 303
+    voice_client = MagicMock()
+    voice_client.guild = SimpleNamespace(id=guild_id)
+
+    with patch.object(player.settings, "idle_timeout_seconds", 10):
+        player.start_idle_timer(voice_client)
+    assert guild_id in player._idle_timers
+
+    channel = MagicMock()
+    channel.send = AsyncMock()
+    panel_message = MagicMock()
+    panel_message.channel = channel
+    panel_message.delete = AsyncMock()
+    status_panel._panels[guild_id] = panel_message
+
+    await player.cleanup_after_external_disconnect(guild_id)
+
+    assert guild_id not in player._idle_timers
+    assert guild_id not in status_panel._panels
+    panel_message.delete.assert_awaited_once()
+    channel.send.assert_not_awaited()  # no reason message for an external disconnect

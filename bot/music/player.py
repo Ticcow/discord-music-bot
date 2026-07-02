@@ -19,21 +19,33 @@ def cancel_idle_timer(guild_id: int) -> None:
         task.cancel()
 
 
-async def disconnect_and_cleanup(voice_client: discord.VoiceClient, *, reason: str | None = None) -> None:
-    """Tear down a voice session: cancel any idle timer, clear the queue,
-    disconnect, and remove the panel. If reason is given, posts a note in
-    the panel's channel explaining why the bot left."""
-    guild_id = voice_client.guild.id
+async def _cleanup_session(guild_id: int, *, reason: str | None = None) -> None:
     cancel_idle_timer(guild_id)
     channel = status_panel.get_channel(guild_id) if reason else None
     queues.get(guild_id).clear()
-    await voice_client.disconnect()
     await status_panel.clear_panel(guild_id)
     if reason and channel is not None:
         try:
             await channel.send(reason)
         except discord.HTTPException:
             logger.warning("Failed to post disconnect notice for guild %s", guild_id)
+
+
+async def disconnect_and_cleanup(voice_client: discord.VoiceClient, *, reason: str | None = None) -> None:
+    """Tear down a voice session: cancel any idle timer, clear the queue,
+    disconnect, and remove the panel. If reason is given, posts a note in
+    the panel's channel explaining why the bot left."""
+    guild_id = voice_client.guild.id
+    await voice_client.disconnect()
+    await _cleanup_session(guild_id, reason=reason)
+
+
+async def cleanup_after_external_disconnect(guild_id: int) -> None:
+    """The bot's own voice connection ended without going through disconnect_and_cleanup -
+    kicked from the channel, moved somewhere it can't follow, a dropped connection, etc.
+    voice_client.disconnect() was never called, so there's nothing to disconnect here,
+    just our own bookkeeping (idle timer, queue, panel) left pointing at a dead session."""
+    await _cleanup_session(guild_id)
 
 
 async def _disconnect_after_idle(voice_client: discord.VoiceClient) -> None:

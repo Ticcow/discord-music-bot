@@ -91,3 +91,69 @@ async def test_noop_when_bot_not_in_voice():
     mock_cleanup = await _run(member, None, None)
 
     mock_cleanup.assert_not_awaited()
+
+
+def _own_bot_setup(bot_user_id: int = 999) -> tuple:
+    bot_mock = MagicMock()
+    bot_mock.user.id = bot_user_id
+    cog = VoiceCog(bot=bot_mock)
+    guild = SimpleNamespace(id=555, voice_client=MagicMock())
+    own_member = MagicMock(spec=discord.Member)
+    own_member.id = bot_user_id
+    own_member.bot = True
+    own_member.guild = guild
+    return cog, own_member
+
+
+async def test_cleans_up_when_bot_itself_is_disconnected_externally():
+    # e.g. someone right-click-disconnects the bot, or it's moved somewhere it
+    # can't follow - this never goes through /leave or the idle timeout, so
+    # nothing else would clean up the panel/queue/timer without this.
+    cog, own_member = _own_bot_setup()
+    channel = _channel([])
+
+    with patch(
+        "bot.commands.voice.player.cleanup_after_external_disconnect", new=AsyncMock()
+    ) as mock_cleanup:
+        await cog.on_voice_state_update(own_member, _voice_state(channel), _voice_state(None))
+
+    mock_cleanup.assert_awaited_once_with(555)
+
+
+async def test_does_not_clean_up_when_bot_moves_between_channels():
+    cog, own_member = _own_bot_setup()
+    old_channel = _channel([])
+    new_channel = _channel([])
+
+    with patch(
+        "bot.commands.voice.player.cleanup_after_external_disconnect", new=AsyncMock()
+    ) as mock_cleanup:
+        await cog.on_voice_state_update(
+            own_member, _voice_state(old_channel), _voice_state(new_channel)
+        )
+
+    mock_cleanup.assert_not_awaited()
+
+
+async def test_does_not_clean_up_on_mute_or_deafen_toggle():
+    cog, own_member = _own_bot_setup()
+    channel = _channel([])
+
+    with patch(
+        "bot.commands.voice.player.cleanup_after_external_disconnect", new=AsyncMock()
+    ) as mock_cleanup:
+        await cog.on_voice_state_update(own_member, _voice_state(channel), _voice_state(channel))
+
+    mock_cleanup.assert_not_awaited()
+
+
+async def test_bots_own_voice_state_change_does_not_fall_through_to_alone_check():
+    cog, own_member = _own_bot_setup()
+
+    with (
+        patch("bot.commands.voice.player.cleanup_after_external_disconnect", new=AsyncMock()),
+        patch("bot.commands.voice.player.disconnect_and_cleanup", new=AsyncMock()) as mock_old_path,
+    ):
+        await cog.on_voice_state_update(own_member, _voice_state(None), _voice_state(None))
+
+    mock_old_path.assert_not_awaited()
