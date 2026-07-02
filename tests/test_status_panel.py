@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -130,6 +131,39 @@ async def test_refresh_keeps_old_panel_if_repost_fails():
 
     assert status_panel._panels[guild_id] is old_message
     old_message.delete.assert_not_awaited()
+
+
+async def test_refresh_serializes_concurrent_calls_without_orphaning_a_message():
+    # Regression: if a track fails almost instantly, play_next() can run
+    # twice back to back, triggering two overlapping refresh() calls. Without
+    # locking, both could read the same "old" message, post their own new
+    # one, and only the last write to _panels[guild_id] survives - silently
+    # orphaning whichever message lost the race, with no code path left that
+    # will ever delete it.
+    guild_id = 110
+    channel = _fake_channel()
+    initial_message = _fake_message(channel)
+    posted = [initial_message]
+
+    async def _send(*, embed):
+        await asyncio.sleep(0.01)
+        message = _fake_message(channel)
+        posted.append(message)
+        return message
+
+    channel.send = AsyncMock(side_effect=[initial_message])
+    await status_panel.ensure_panel(channel, guild_id)
+
+    channel.send = AsyncMock(side_effect=_send)
+    voice_client = _fake_voice_client(guild_id)
+    await asyncio.gather(status_panel.refresh(voice_client), status_panel.refresh(voice_client))
+
+    current = status_panel._panels[guild_id]
+    for message in posted:
+        if message is current:
+            message.delete.assert_not_awaited()
+        else:
+            message.delete.assert_awaited_once()
 
 
 async def test_clear_panel_deletes_message_and_allows_recreation():

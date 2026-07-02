@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import shlex
 from dataclasses import dataclass
 
 import yt_dlp
@@ -25,9 +26,7 @@ _YOUTUBE_URL_RE = re.compile(
     re.IGNORECASE,
 )
 
-FFMPEG_BEFORE_OPTIONS = (
-    "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
-)
+_FFMPEG_RECONNECT_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
 
 
@@ -115,10 +114,23 @@ def _lookup_url_sync(url: str) -> dict:
         return ydl.extract_info(url, download=False)
 
 
-def _resolve_sync(webpage_url: str) -> str:
+def _build_before_options(http_headers: dict) -> str:
+    # YouTube's CDN increasingly rejects a stream request that doesn't carry
+    # the same headers (e.g. User-Agent) yt-dlp used to resolve the URL,
+    # returning a 403 with no audio and no visible error. shlex.quote keeps
+    # the \r\n-joined header block intact as a single ffmpeg argument once
+    # discord.py re-splits this string with shlex.split.
+    options = _FFMPEG_RECONNECT_OPTIONS
+    if http_headers:
+        header_str = "".join(f"{k}: {v}\r\n" for k, v in http_headers.items())
+        options += f" -headers {shlex.quote(header_str)}"
+    return options
+
+
+def _resolve_sync(webpage_url: str) -> tuple[str, str]:
     with yt_dlp.YoutubeDL(_BASE_OPTS) as ydl:
         info = ydl.extract_info(webpage_url, download=False)
-        return info["url"]
+        return info["url"], _build_before_options(info.get("http_headers") or {})
 
 
 async def search(query: str, requested_by: str) -> Track:
@@ -144,5 +156,7 @@ async def search_many(query: str, count: int, requested_by: str) -> list[Track]:
     return tracks
 
 
-async def resolve_stream_url(track: Track) -> str:
+async def resolve_stream_url(track: Track) -> tuple[str, str]:
+    """Returns (direct stream URL, ffmpeg before_options). before_options carries
+    yt-dlp's http_headers - see _build_before_options for why that's required."""
     return await asyncio.to_thread(_resolve_sync, track.webpage_url)

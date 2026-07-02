@@ -104,3 +104,44 @@ async def test_cleanup_after_external_disconnect_clears_timer_and_panel():
     assert guild_id not in status_panel._panels
     panel_message.delete.assert_awaited_once()
     channel.send.assert_not_awaited()  # no reason message for an external disconnect
+
+
+def test_playback_likely_failed_true_when_ffmpeg_raised_an_error():
+    assert player._playback_likely_failed(RuntimeError("boom"), "") is True
+
+
+def test_playback_likely_failed_false_for_clean_end_of_track():
+    assert player._playback_likely_failed(None, "some harmless ffmpeg warning") is False
+
+
+def test_playback_likely_failed_true_on_known_failure_signature():
+    # Regression: this is the exact case that motivated the check -
+    # discord.py's own error detection can race the ffmpeg process being
+    # reaped and miss it, so a known-bad stderr signature is a backup net.
+    stderr = "[https @ 0x...] HTTP error 403 Forbidden\nError opening input: Server returned 403 Forbidden"
+    assert player._playback_likely_failed(None, stderr) is True
+
+
+async def test_notify_playback_failed_posts_to_the_panel_channel():
+    guild_id = 304
+    voice_client = MagicMock()
+    voice_client.guild = SimpleNamespace(id=guild_id)
+    channel = MagicMock()
+    channel.send = AsyncMock()
+    panel_message = MagicMock()
+    panel_message.channel = channel
+    status_panel._panels[guild_id] = panel_message
+    track = SimpleNamespace(title="Some Song")
+
+    await player._notify_playback_failed(voice_client, track)
+
+    channel.send.assert_awaited_once_with("Couldn't play **Some Song** - skipping.")
+
+
+async def test_notify_playback_failed_is_a_noop_without_a_panel():
+    guild_id = 305
+    voice_client = MagicMock()
+    voice_client.guild = SimpleNamespace(id=guild_id)
+    track = SimpleNamespace(title="Some Song")
+
+    await player._notify_playback_failed(voice_client, track)  # should not raise

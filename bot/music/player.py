@@ -1,4 +1,5 @@
 import asyncio
+import io
 import logging
 
 import discord
@@ -6,11 +7,24 @@ import discord
 from bot.config import settings
 from bot.music import status_panel
 from bot.music.queue import GuildQueue, queues
-from bot.music.youtube import FFMPEG_BEFORE_OPTIONS, FFMPEG_OPTIONS, Track, resolve_stream_url
+from bot.music.youtube import FFMPEG_OPTIONS, Track, resolve_stream_url
 
 logger = logging.getLogger(__name__)
 
 _idle_timers: dict[int, asyncio.Task] = {}
+
+# Signatures that show up in ffmpeg's stderr when YouTube rejects a stream
+# request outright (bad/expired signature, region lock, removed video, etc).
+# A backup net alongside discord.py's own error detection, which can race
+# against the ffmpeg process being reaped before it's checked.
+_FFMPEG_FAILURE_MARKERS = ("Forbidden", "Error opening input", "Server returned")
+_STDERR_LOG_TAIL = 4000
+
+
+def _playback_likely_failed(error: Exception | None, stderr_text: str) -> bool:
+    if error is not None:
+        return True
+    return any(marker in stderr_text for marker in _FFMPEG_FAILURE_MARKERS)
 
 
 def cancel_idle_timer(guild_id: int) -> None:
@@ -114,22 +128,38 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
 
     cancel_idle_timer(voice_client.guild.id)
 
-    stream_url = await resolve_stream_url(track)
+    stream_url, before_options = await resolve_stream_url(track)
+    stderr_buffer = io.BytesIO()
     source = discord.FFmpegPCMAudio(
         stream_url,
-        before_options=FFMPEG_BEFORE_OPTIONS,
+        before_options=before_options,
         options=FFMPEG_OPTIONS,
+        stderr=stderr_buffer,
     )
 
     loop = asyncio.get_running_loop()
 
     def _after(error: Exception | None) -> None:
-        if error:
-            logger.error("Playback error for %s: %s", track.title, error)
+        stderr_text = stderr_buffer.getvalue().decode(errors="replace")
+        if _playback_likely_failed(error, stderr_text):
+            logger.error(
+                "Playback error for %s: %s\n%s", track.title, error, stderr_text[-_STDERR_LOG_TAIL:]
+            )
+            asyncio.run_coroutine_threadsafe(_notify_playback_failed(voice_client, track), loop)
         asyncio.run_coroutine_threadsafe(play_next(voice_client), loop)
 
     voice_client.play(source, after=_after)
     await status_panel.refresh(voice_client)
+
+
+async def _notify_playback_failed(voice_client: discord.VoiceClient, track: Track) -> None:
+    channel = status_panel.get_channel(voice_client.guild.id)
+    if channel is None:
+        return
+    try:
+        await channel.send(f"Couldn't play **{track.title}** - skipping.")
+    except discord.HTTPException:
+        logger.warning("Failed to post playback-failure notice for guild %s", voice_client.guild.id)
 
 
 async def _enqueue(voice_client: discord.VoiceClient, track: Track, *, priority: bool) -> None:

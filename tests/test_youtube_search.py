@@ -1,11 +1,14 @@
 import logging
+import shlex
 from unittest.mock import MagicMock, patch
 
 from bot.music.youtube import (
+    _build_before_options,
     _looks_like_music,
     _looks_like_youtube_url,
     _select_candidates,
     _track_from_info,
+    resolve_stream_url,
     search,
 )
 
@@ -148,3 +151,34 @@ async def test_search_logs_the_query_and_the_picked_track(caplog):
     assert track.title == "Found Song"
     assert "some query" in caplog.text
     assert "Found Song" in caplog.text
+
+
+def test_build_before_options_omits_headers_flag_when_none_given():
+    options = _build_before_options({})
+    assert "-headers" not in options
+
+
+def test_build_before_options_survives_shlex_roundtrip_with_embedded_crlf():
+    # Regression: YouTube's CDN increasingly 403s a stream request that
+    # doesn't carry yt-dlp's http_headers (e.g. User-Agent). discord.py
+    # re-splits before_options with shlex.split, so the \r\n-joined header
+    # block must survive that roundtrip as a single argument.
+    headers = {"User-Agent": "Mozilla/5.0 Test Agent", "Accept": "*/*"}
+    options = _build_before_options(headers)
+
+    parsed = shlex.split(options)
+    assert "-headers" in parsed
+    header_arg = parsed[parsed.index("-headers") + 1]
+    assert header_arg == "User-Agent: Mozilla/5.0 Test Agent\r\nAccept: */*\r\n"
+
+
+async def test_resolve_stream_url_returns_before_options_with_headers():
+    fake_info = {"url": "https://x/stream", "http_headers": {"User-Agent": "abc"}}
+    ydl = _fake_ydl(fake_info)
+    track = _track_from_info({"title": "Song", "webpage_url": "https://x/1"}, "tester")
+
+    with patch("bot.music.youtube.yt_dlp.YoutubeDL", return_value=ydl):
+        stream_url, before_options = await resolve_stream_url(track)
+
+    assert stream_url == "https://x/stream"
+    assert "-headers" in shlex.split(before_options)
