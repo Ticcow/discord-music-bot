@@ -72,6 +72,14 @@ Discord bot application and running the bot as a systemd service alongside Ollam
 - **Command access is per-server only**, not per-user beyond the voice-channel check above -
   anyone with access to invite the bot controls what it can do in their server.
 
+## Legal
+
+This project uses `yt-dlp` to extract and stream audio from YouTube, which falls outside
+YouTube's official API and Terms of Service. This tool is intended for personal and educational
+use. You are responsible for complying with YouTube's Terms of Service, Discord's Developer Policy,
+and applicable copyright law in your jurisdiction when running it. This project is not affiliated
+with, endorsed by, or sponsored by YouTube, Google, or Discord.
+
 ## License
 
 [MIT](LICENSE)
