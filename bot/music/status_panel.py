@@ -33,10 +33,15 @@ def _build_embed(guild_id: int, is_paused: bool) -> discord.Embed:
 
 
 async def ensure_panel(channel: discord.abc.Messageable, guild_id: int) -> None:
-    """Post the live panel the first time a guild starts using voice. No-op if one already exists."""
+    """Post the live panel the first time a guild starts using voice. No-op if one already exists.
+    Swallows permission errors so a channel the bot can't post in doesn't block playback."""
     if guild_id in _panels:
         return
-    message = await channel.send(embed=_build_embed(guild_id, is_paused=False))
+    try:
+        message = await channel.send(embed=_build_embed(guild_id, is_paused=False))
+    except discord.HTTPException:
+        logger.warning("Failed to post status panel for guild %s", guild_id)
+        return
     _panels[guild_id] = message
 
 

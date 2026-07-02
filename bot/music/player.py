@@ -72,8 +72,8 @@ async def ensure_voice_client(interaction: discord.Interaction) -> discord.Voice
         return None
 
     voice_client = await member.voice.channel.connect()
-    await status_panel.ensure_panel(interaction.channel, interaction.guild.id)
     start_idle_timer(voice_client)
+    await status_panel.ensure_panel(interaction.channel, interaction.guild.id)
     return voice_client
 
 

@@ -76,6 +76,20 @@ async def test_refresh_reposts_panel_as_a_new_message_at_the_bottom():
     assert "Now Playing Song" in embed.fields[0].value
 
 
+async def test_ensure_panel_swallows_permission_errors():
+    # If the bot lacks Send Messages/Embed Links in the channel, ensure_panel must not
+    # raise - an unhandled exception here previously aborted /play entirely, leaving the
+    # interaction stuck on "thinking..." forever and the bot connected to voice with no
+    # idle timer.
+    guild_id = 106
+    channel = _fake_channel()
+    channel.send.side_effect = _server_error()
+
+    await status_panel.ensure_panel(channel, guild_id)  # should not raise
+
+    assert guild_id not in status_panel._panels
+
+
 async def test_refresh_is_a_noop_when_no_panel_exists():
     await status_panel.refresh(_fake_voice_client(999))  # should not raise
 
