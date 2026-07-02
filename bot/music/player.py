@@ -51,11 +51,24 @@ async def play_next(voice_client: discord.VoiceClient) -> None:
     voice_client.play(source, after=_after)
 
 
-async def enqueue(voice_client: discord.VoiceClient, track: Track) -> None:
+async def _enqueue(voice_client: discord.VoiceClient, track: Track, *, priority: bool) -> None:
     guild_queue = queues.get(voice_client.guild.id)
-    guild_queue.add(track)
+    if priority:
+        guild_queue.add_priority(track)
+    else:
+        guild_queue.add_ambient(track)
     if not voice_client.is_playing() and not voice_client.is_paused():
         await play_next(voice_client)
+
+
+async def enqueue_priority(voice_client: discord.VoiceClient, track: Track) -> None:
+    """Explicit /play requests - always played before any ambient tracks."""
+    await _enqueue(voice_client, track, priority=True)
+
+
+async def enqueue_ambient(voice_client: discord.VoiceClient, track: Track) -> None:
+    """Tracks auto-queued by the natural-language agent - yield to /play requests."""
+    await _enqueue(voice_client, track, priority=False)
 
 
 def pause(voice_client: discord.VoiceClient) -> bool:

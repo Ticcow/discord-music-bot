@@ -2,9 +2,14 @@ import discord
 
 from bot.music import player
 from bot.music.queue import queues
-from bot.music.youtube import search
+from bot.music.youtube import search_many
 
 VALID_TOOL_NAMES = ("search_and_play", "pause", "resume", "skip", "list_queue", "none")
+
+# Vibe/artist requests via /ask queue a short run of tracks rather than one,
+# since the intent behind e.g. "play some kanye" is a listening session, not
+# a single precise track. These sit behind any /play requests in the queue.
+BATCH_SIZE = 3
 
 
 async def execute_tool(
@@ -19,11 +24,13 @@ async def execute_tool(
     if name == "search_and_play":
         query = arguments.get("query", "")
         try:
-            track = await search(query, requested_by=requested_by)
+            tracks = await search_many(query, BATCH_SIZE, requested_by=requested_by)
         except ValueError as exc:
             return str(exc)
-        await player.enqueue(voice_client, track)
-        return f"Queued '{track.title}'."
+        for track in tracks:
+            await player.enqueue_ambient(voice_client, track)
+        titles = ", ".join(f"'{t.title}'" for t in tracks)
+        return f"Queued {len(tracks)} tracks: {titles}."
 
     if name == "pause":
         return "Paused." if player.pause(voice_client) else "Nothing is playing."

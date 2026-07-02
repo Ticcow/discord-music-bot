@@ -27,8 +27,8 @@ class PlaybackCog(commands.Cog):
             await interaction.followup.send(str(exc))
             return
 
-        await player.enqueue(voice_client, track)
-        await interaction.followup.send(f"Queued **{track.title}**.")
+        await player.enqueue_priority(voice_client, track)
+        await interaction.followup.send(f"Queued **{track.title}** - up next.")
 
     @app_commands.command(name="pause", description="Pause playback")
     async def pause(self, interaction: discord.Interaction) -> None:
