@@ -1,0 +1,9 @@
+[Unit]
+Description=Periodically check that discord-bot.service is still running
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

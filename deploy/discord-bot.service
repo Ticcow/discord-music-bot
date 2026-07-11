@@ -10,7 +10,13 @@ WorkingDirectory=/home/pi/discord-music-bot
 Environment=PATH=/home/pi/.deno/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EnvironmentFile=/home/pi/discord-music-bot/.env
 ExecStart=/home/pi/discord-music-bot/.venv/bin/python -m bot.main
-Restart=on-failure
+# always, not on-failure: on-failure explicitly excludes SIGTERM from what
+# counts as a restart-worthy exit. update_yt_dlp.sh restarts the bot by
+# sending it SIGTERM directly (pkill), which on-failure silently treated as
+# an intentional stop and never restarted from - leaving the bot down until
+# someone noticed. always restarts on that too, while still respecting a
+# deliberate `systemctl stop`.
+Restart=always
 RestartSec=5
 
 [Install]

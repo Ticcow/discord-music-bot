@@ -82,7 +82,7 @@ async def _handle_suspected_yt_dlp_breakage(voice_client: discord.VoiceClient) -
     logger.info("yt-dlp updated %s -> %s after a suspected-breakage streak, restarting", before, after)
     # Hard exit rather than a graceful shutdown: importing already-loaded
     # modules doesn't pick up an on-disk package upgrade, so the process must
-    # actually restart. discord-bot.service has Restart=on-failure and brings
+    # actually restart. discord-bot.service has Restart=always and brings
     # it straight back up with the new version.
     os._exit(1)
 

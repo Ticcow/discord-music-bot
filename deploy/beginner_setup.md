@@ -218,6 +218,18 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now yt-dlp-update.timer
 ```
 
+## Step 10 (optional but recommended): automatically recover if the bot ever gets stuck stopped
+
+The bot restarts itself after a crash, but if it's ever stopped some other way and nobody notices,
+it just stays offline. This adds a check every 5 minutes that restarts it if it's found stopped:
+
+```bash
+sed -e "s#/home/pi#$HOME#g" deploy/discord-bot-watchdog.service | sudo tee /etc/systemd/system/discord-bot-watchdog.service
+sudo cp deploy/discord-bot-watchdog.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now discord-bot-watchdog.timer
+```
+
 ## Troubleshooting
 
 - **Bot shows offline in Discord.** Run `sudo systemctl status discord-bot.service`. If it says

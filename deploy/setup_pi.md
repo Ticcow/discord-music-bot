@@ -109,11 +109,11 @@ this project's pinned dependencies, yt-dlp needs to move faster than a one-time 
 
 The bot itself also reacts to this in real time: if 3 tracks in a row fail to play, it posts a
 note to the channel, tries `pip install --upgrade yt-dlp` immediately, and restarts itself to pick
-up the new version if one was found (relying on `discord-bot.service`'s `Restart=on-failure`, same
-as the timer below) - so you don't have to wait for a scheduled check if something breaks
-mid-session. That reactive check has a one-hour cooldown so a non-yt-dlp problem (e.g. a real
-network outage) doesn't cause repeated restarts. No separate setup is needed for this - it's built
-into the bot process.
+up the new version if one was found (relying on `discord-bot.service`'s `Restart=always`, same as
+the timer below) - so you don't have to wait for a scheduled check if something breaks mid-session.
+That reactive check has a one-hour cooldown so a non-yt-dlp problem (e.g. a real network outage)
+doesn't cause repeated restarts. No separate setup is needed for this - it's built into the bot
+process.
 
 On top of that, this installs a weekly timer that proactively upgrades yt-dlp and restarts the bot
 only if the version actually changed, so most breakage is avoided before it's ever noticed:
@@ -130,4 +130,27 @@ Confirm it worked without waiting a week:
 ```bash
 sudo systemctl start yt-dlp-update.service
 journalctl -u yt-dlp-update.service -n 20
+```
+
+## 10. Recover automatically if the bot ever ends up stopped (recommended)
+
+`Restart=always` handles the bot crashing or being killed, but two gaps remain: a fast crash loop
+can exhaust systemd's built-in `StartLimitBurst` and leave the unit stuck in a `failed` state with
+no further auto-restart, and nothing brings the bot back if it's ever stopped by mistake (or by
+something outside systemd) and nobody notices. This installs a timer that checks every 5 minutes
+and restarts the bot if it's found stopped, clearing any start-limit lockout first:
+
+```bash
+sed -e "s#/home/pi#$HOME#g" deploy/discord-bot-watchdog.service | sudo tee /etc/systemd/system/discord-bot-watchdog.service
+sudo cp deploy/discord-bot-watchdog.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now discord-bot-watchdog.timer
+```
+
+Confirm it worked without waiting for a real outage:
+
+```bash
+sudo systemctl stop discord-bot.service
+sudo systemctl start discord-bot-watchdog.service
+sudo systemctl status discord-bot.service
 ```

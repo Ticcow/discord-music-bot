@@ -19,5 +19,5 @@ fi
 
 echo "yt-dlp updated: $before -> $after, restarting the bot to pick it up"
 # No sudo needed: killing our own process is enough, since discord-bot.service
-# is configured with Restart=on-failure and brings it straight back up.
+# is configured with Restart=always and brings it straight back up.
 pkill -u "$(whoami)" -f "bot.main"
